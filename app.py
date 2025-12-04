@@ -4,10 +4,10 @@ import pandas as pd
 import requests
 
 # -------------------------------
-# 한글 이름 → 티커 매핑
+# 한글 이름 → 티커 매핑 (미국 + 한국)
 # -------------------------------
 KOREAN_TICKER_MAP = {
-    # 빅테크 / AI
+    # 빅테크 / AI (미국)
     "엔비디아": "NVDA", "엔비디아코퍼레이션": "NVDA",
     "마이크로소프트": "MSFT", "마소": "MSFT",
     "애플": "AAPL",
@@ -78,21 +78,44 @@ KOREAN_TICKER_MAP = {
     # 비트코인 ETF (미국)
     "비트코인ETF": "IBIT",
     "아이쉐어즈비트코인": "IBIT",
+
+    # ---- 한국 주식 (야후티커 .KS / .KQ) ----
+    "삼성전자": "005930.KS",
+    "삼성전자우": "005935.KS",
+    "SK하이닉스": "000660.KS",
+    "네이버": "035420.KS",
+    "카카오": "035720.KS",
+    "현대차": "005380.KS",
+    "기아": "000270.KS",
+    "LG전자": "066570.KS",
+    "삼성바이오로직스": "207940.KS",
+    "셀트리온": "068270.KS",
+    "포스코홀딩스": "005490.KS",
+    "두산로보틱스": "448370.KS",
+    "한화오션": "042660.KS",
+    "HMM": "011200.KS",
+    "한국전력": "015760.KS",
+    "카카오뱅크": "323410.KS",
+    "카카오페이": "377300.KS",
 }
 
 POPULAR_SYMBOLS = [
     "NVDA", "META", "TSLA", "AAPL", "MSFT", "AMZN",
     "QQQ", "TQQQ", "SOXL", "SPY", "VOO",
     "COIN", "MSTR", "RIOT", "MARA",
-    "ORCL", "PYPL"
+    "ORCL", "PYPL",
+    "005930.KS", "000660.KS", "035420.KS", "035720.KS"
 ]
 
 
 def normalize_symbol(user_input: str) -> str:
-    """한글이면 티커로 변환, 아니면 공백 제거 후 대문자로"""
+    """한글이면 티커로 변환, 아니면 공백 제거 후 대문자(or 한국형식)"""
     name = user_input.strip()
     if name in KOREAN_TICKER_MAP:
         return KOREAN_TICKER_MAP[name]
+    # 한국티커(숫자+ .KS/.KQ) 그대로 허용
+    if name.endswith(".KS") or name.endswith(".KQ"):
+        return name
     return name.replace(" ", "").upper()
 
 
@@ -180,8 +203,8 @@ def add_indicators(df):
     delta = close.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-    roll_up = gain.ewm(alpha=1/14, adjust=False).mean()
-    roll_down = loss.ewm(alpha=1/14, adjust=False).mean()
+    roll_up = gain.ewm(alpha=1 / 14, adjust=False).mean()
+    roll_down = loss.ewm(alpha=1 / 14, adjust=False).mean()
     rs = roll_up / roll_down
     rsi = 100 - (100 / (1 + rs))
     df["RSI14"] = rsi
@@ -295,14 +318,14 @@ def short_term_bias(last_row):
 # -------------------------------
 def make_signal(row, avg_price, cfg, fgi=None):
     price = float(row["Close"])
-    bbl   = float(row["BBL"])
-    bbu   = float(row["BBU"])
-    ma20  = float(row["MA20"])
-    k     = float(row["STOCH_K"])
-    d     = float(row["STOCH_D"])
-    macd  = float(row["MACD"])
+    bbl = float(row["BBL"])
+    bbu = float(row["BBU"])
+    ma20 = float(row["MA20"])
+    k = float(row["STOCH_K"])
+    d = float(row["STOCH_D"])
+    macd = float(row["MACD"])
     macds = float(row["MACD_SIGNAL"])
-    rsi   = float(row["RSI14"])
+    rsi = float(row["RSI14"])
 
     take_profit_pct = cfg["take_profit_pct"]
     stop_loss_pct = cfg["stop_loss_pct"]
@@ -316,8 +339,8 @@ def make_signal(row, avg_price, cfg, fgi=None):
     greed = (fgi is not None and fgi >= 75)
 
     strong_overbought = (price > bbu and k > 80 and rsi > 65 and macd < macds)
-    mild_overbought   = (price > ma20 and (k > 70 or rsi > 60))
-    strong_oversold   = (price < bbl and k < 20 and d < 20 and rsi < 35)
+    mild_overbought = (price > ma20 and (k > 70 or rsi > 60))
+    strong_oversold = (price < bbl and k < 20 and d < 20 and rsi < 35)
 
     # 평단 없음 = 신규 진입 관점
     if avg_price <= 0:
@@ -387,9 +410,9 @@ def calc_levels(df, last, avg_price, cfg):
     recent_low = float(recent["Close"].min())
 
     price = float(last["Close"])
-    ma20  = float(last["MA20"])
-    bbl   = float(last["BBL"])
-    bbu   = float(last["BBU"])
+    ma20 = float(last["MA20"])
+    bbl = float(last["BBL"])
+    bbu = float(last["BBU"])
 
     take_profit_pct = cfg["take_profit_pct"]
     stop_loss_pct = cfg["stop_loss_pct"]
@@ -439,28 +462,33 @@ def calc_levels(df, last, avg_price, cfg):
 def main():
     st.set_page_config(page_title="내 주식 자동판단기", page_icon="📈", layout="centered")
 
-    if "history" not in st.session_state:
-        st.session_state["history"] = []
-
     st.title("📈 내 주식 자동판단기")
     st.write("단타 · 스윙 · 장기 + FGI + 기술적 지표 기반으로 매수/매도/물타기/신규진입 구간을 정리해줍니다.")
     st.caption("※ 종목 입력은 영어 티커가 가장 정확합니다. 한글 이름은 일부 인기 종목만 자동 인식됩니다.")
 
-    # 인기/기록 종목 자동완성용 선택박스
-    options = sorted(set(POPULAR_SYMBOLS + st.session_state["history"]))
-    selected_from_list = st.selectbox(
-        "최근 검색/인기 종목 (선택 시 위 입력 대신 사용 가능)",
-        options=["선택 안 함"] + options,
-        index=0
-    )
+    # 인기 종목 빠른 선택 콜백
+    def set_symbol(sym):
+        st.session_state["symbol_input"] = sym
 
-    # 입력 영역 (폼 없이 바로)
+    # 입력 영역
     col1, col2 = st.columns(2)
     with col1:
-        user_symbol = st.text_input("종목 이름/티커 (예: NVDA, 엔비디아, META, TQQQ)", value="엔비디아")
+        if "symbol_input" not in st.session_state:
+            st.session_state["symbol_input"] = "엔비디아"
+        user_symbol = st.text_input(
+            "종목 이름/티커 직접 입력 (예: NVDA, 엔비디아, META, TQQQ, 삼성전자)",
+            key="symbol_input"
+        )
         holding_type = st.radio("보유 상태", ["보유 중", "신규 진입 검토"], horizontal=True)
     with col2:
         mode_name = st.selectbox("투자 모드 선택", ["단타", "스윙", "장기"], index=1)
+
+    st.markdown("##### 🔍 인기 종목 빠른 선택 (버튼 클릭 시 위 입력 칸에 자동 입력)")
+    btn_cols = st.columns(4)
+    popular_to_show = POPULAR_SYMBOLS
+    for i, sym in enumerate(popular_to_show):
+        with btn_cols[i % 4]:
+            st.button(sym, key=f"symbtn_{sym}", on_click=set_symbol, args=(sym,))
 
     col3, col4 = st.columns(2)
     avg_price = 0.0
@@ -471,19 +499,13 @@ def main():
         with col4:
             shares = st.number_input("보유 수량 (주)", min_value=0, value=0, step=1)
 
-    run = st.button("🔍 분석하기")
+    run = st.button("🚀 분석하기")
 
     if not run:
         return
 
-    # 선택박스에서 고른 게 있으면 그걸 우선 사용
-    if selected_from_list != "선택 안 함" and not user_symbol.strip():
-        symbol = selected_from_list
-        display_name = selected_from_list
-    else:
-        symbol = normalize_symbol(user_symbol)
-        display_name = user_symbol
-
+    symbol = normalize_symbol(user_symbol)
+    display_name = user_symbol
     cfg = get_mode_config(mode_name)
 
     with st.spinner("데이터 불러오는 중..."):
@@ -491,7 +513,7 @@ def main():
         df = get_price_data(symbol, cfg["period"])
 
         if df.empty:
-            st.error("❌ 이 종목은 선택한 기간 동안 데이터가 부족합니다. 다른 모드(스윙/장기)로 다시 시도해 주세요.")
+            st.error("❌ 이 종목은 선택한 기간 동안 데이터가 부족합니다. 다른 모드(스윙/장기) 또는 티커를 확인해 주세요.")
             return
 
         df = add_indicators(df)
@@ -501,16 +523,10 @@ def main():
 
         last = df.iloc[-1]
 
-    # 검색 성공하면 히스토리에 저장
-    if symbol not in st.session_state["history"]:
-        st.session_state["history"].append(symbol)
-        st.session_state["history"] = st.session_state["history"][-30:]  # 최근 30개만 유지
-
     price = float(last["Close"])
     profit_pct = (price - avg_price) / avg_price * 100 if avg_price > 0 else 0.0
     total_pnl = (price - avg_price) * shares if (shares > 0 and avg_price > 0) else 0.0
 
-    # 신규 진입 모드는 avg_price=0으로 신호 계산
     eff_avg_price = avg_price if holding_type == "보유 중" else 0.0
     signal = make_signal(last, eff_avg_price, cfg, fgi)
     buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, eff_avg_price, cfg)
@@ -571,7 +587,6 @@ def main():
         st.write(f"- 0차 손절가 (경고 손절): **{sl0:.2f} USD**")
         st.write(f"- 1차 손절가 (최종 방어선): **{sl1:.2f} USD**")
     else:
-        # 신규 진입용 1차/2차 매수 레벨
         entry1 = min(buy_high, buy_low * 1.03)
         entry2 = buy_low
         st.write(f"- 1차 진입(소량 매수) 추천가: **{entry1:.2f} USD** 근처")
@@ -579,7 +594,6 @@ def main():
         st.caption("※ 신규 진입은 한 번에 몰입하기보다, 1차·2차로 나누어 분할 매수하는 것을 전제로 한 가이드입니다.")
 
     st.subheader("📊 지표 상태 (마지막 일봉 기준)")
-
     rsi = float(last["RSI14"])
     k = float(last["STOCH_K"])
     d = float(last["STOCH_D"])
