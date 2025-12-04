@@ -4,7 +4,7 @@ import pandas as pd
 import requests
 
 # -------------------------------
-# 한글 이름 → 티커 매핑 (미국 위주, 한국 일부 지원)
+# 한글 이름 → 티커 매핑 (미국 위주)
 # -------------------------------
 KOREAN_TICKER_MAP = {
     # 빅테크 / AI (미국)
@@ -80,12 +80,12 @@ KOREAN_TICKER_MAP = {
     "아이쉐어즈비트코인": "IBIT",
 }
 
-# 인기 종목 목록 (드롭다운용) – 미국만
+# 인기 종목 (자동완성 힌트에만 사용)
 POPULAR_SYMBOLS = [
     "NVDA", "META", "TSLA", "AAPL", "MSFT", "AMZN",
     "QQQ", "TQQQ", "SOXL", "SPY", "VOO",
     "COIN", "MSTR", "RIOT", "MARA",
-    "ORCL", "PYPL",
+    "ORCL", "PYPL", "NFLX", "PLTR", "AVGO",
 ]
 
 
@@ -437,6 +437,9 @@ def calc_levels(df, last, avg_price, cfg):
 def main():
     st.set_page_config(page_title="내 주식 자동판단기", page_icon="📈", layout="centered")
 
+    if "recent_symbols" not in st.session_state:
+        st.session_state["recent_symbols"] = []
+
     st.title("📈 내 주식 자동판단기")
     st.write("단타 · 스윙 · 장기 + FGI + 기술적 지표 기반으로 매수/매도/물타기/신규진입 구간을 정리해줍니다.")
     st.caption("※ 종목 입력은 영어 티커가 가장 정확합니다. 한글 이름은 일부 인기 종목만 자동 인식됩니다.")
@@ -444,20 +447,21 @@ def main():
     col1, col2 = st.columns(2)
     with col1:
         user_symbol = st.text_input(
-            "종목 이름/티커 직접 입력 (예: NVDA, 엔비디아, META, TQQQ)",
+            "종목 이름/티커 (예: NVDA, 엔비디아, META, TQQQ)",
             value="엔비디아",
         )
         holding_type = st.radio("보유 상태", ["보유 중", "신규 진입 검토"], horizontal=True)
     with col2:
         mode_name = st.selectbox("투자 모드 선택", ["단타", "스윙", "장기"], index=1)
 
-    # 인기 종목 드롭다운
-    popular_choice = st.selectbox(
-        "📂 인기 종목에서 선택 (선택 시 위 직접 입력 대신 사용)",
-        options=["선택 안 함"] + POPULAR_SYMBOLS,
-        index=0,
-    )
-    st.caption("→ 아무 종목이나 직접 치고 싶으면 위 입력 칸만 쓰면 되고,\n   인기 종목 중에서 고를 땐 여기서 선택하면 됩니다.")
+    # 🔎 자동완성 도움 (입력한 앞글자 기준)
+    prefix = user_symbol.strip().upper().replace(" ", "")
+    candidates = sorted(set(POPULAR_SYMBOLS + st.session_state["recent_symbols"]))
+    suggestions = []
+    if prefix:
+        suggestions = [s for s in candidates if s.startswith(prefix)]
+    if suggestions:
+        st.caption("자동완성 도움: " + ", ".join(suggestions[:6]))
 
     col3, col4 = st.columns(2)
     avg_price = 0.0
@@ -473,14 +477,8 @@ def main():
     if not run:
         return
 
-    # 인기 종목을 선택한 경우 그걸 우선 사용
-    if popular_choice != "선택 안 함":
-        symbol = popular_choice
-        display_name = popular_choice
-    else:
-        symbol = normalize_symbol(user_symbol)
-        display_name = user_symbol
-
+    symbol = normalize_symbol(user_symbol)
+    display_name = user_symbol
     cfg = get_mode_config(mode_name)
 
     with st.spinner("데이터 불러오는 중..."):
@@ -497,6 +495,11 @@ def main():
             return
 
         last = df.iloc[-1]
+
+    # 최근 검색 목록 업데이트
+    if symbol not in st.session_state["recent_symbols"]:
+        st.session_state["recent_symbols"].append(symbol)
+        st.session_state["recent_symbols"] = st.session_state["recent_symbols"][-30:]
 
     price = float(last["Close"])
     profit_pct = (price - avg_price) / avg_price * 100 if avg_price > 0 else 0.0
