@@ -4,7 +4,7 @@ import pandas as pd
 import requests
 
 # -------------------------------
-# 한글 이름 → 티커 매핑 (미국 + 한국)
+# 한글 이름 → 티커 매핑 (미국 위주, 한국 일부 지원)
 # -------------------------------
 KOREAN_TICKER_MAP = {
     # 빅테크 / AI (미국)
@@ -78,44 +78,22 @@ KOREAN_TICKER_MAP = {
     # 비트코인 ETF (미국)
     "비트코인ETF": "IBIT",
     "아이쉐어즈비트코인": "IBIT",
-
-    # ---- 한국 주식 (야후티커 .KS / .KQ) ----
-    "삼성전자": "005930.KS",
-    "삼성전자우": "005935.KS",
-    "SK하이닉스": "000660.KS",
-    "네이버": "035420.KS",
-    "카카오": "035720.KS",
-    "현대차": "005380.KS",
-    "기아": "000270.KS",
-    "LG전자": "066570.KS",
-    "삼성바이오로직스": "207940.KS",
-    "셀트리온": "068270.KS",
-    "포스코홀딩스": "005490.KS",
-    "두산로보틱스": "448370.KS",
-    "한화오션": "042660.KS",
-    "HMM": "011200.KS",
-    "한국전력": "015760.KS",
-    "카카오뱅크": "323410.KS",
-    "카카오페이": "377300.KS",
 }
 
+# 인기 종목 목록 (드롭다운용) – 미국만
 POPULAR_SYMBOLS = [
     "NVDA", "META", "TSLA", "AAPL", "MSFT", "AMZN",
     "QQQ", "TQQQ", "SOXL", "SPY", "VOO",
     "COIN", "MSTR", "RIOT", "MARA",
     "ORCL", "PYPL",
-    "005930.KS", "000660.KS", "035420.KS", "035720.KS"
 ]
 
 
 def normalize_symbol(user_input: str) -> str:
-    """한글이면 티커로 변환, 아니면 공백 제거 후 대문자(or 한국형식)"""
+    """한글이면 티커로 변환, 아니면 공백 제거 후 대문자"""
     name = user_input.strip()
     if name in KOREAN_TICKER_MAP:
         return KOREAN_TICKER_MAP[name]
-    # 한국티커(숫자+ .KS/.KQ) 그대로 허용
-    if name.endswith(".KS") or name.endswith(".KQ"):
-        return name
     return name.replace(" ", "").upper()
 
 
@@ -363,10 +341,7 @@ def make_signal(row, avg_price, cfg, fgi=None):
         return "분할매수"
 
     # 합리적 물타기
-    if avg_price > 0:
-        loss_pct = -profit_pct
-    else:
-        loss_pct = 0.0
+    loss_pct = -profit_pct if avg_price > 0 else 0.0
     lower_bound = stop_loss_pct
     upper_bound = stop_loss_pct + 10
 
@@ -466,29 +441,23 @@ def main():
     st.write("단타 · 스윙 · 장기 + FGI + 기술적 지표 기반으로 매수/매도/물타기/신규진입 구간을 정리해줍니다.")
     st.caption("※ 종목 입력은 영어 티커가 가장 정확합니다. 한글 이름은 일부 인기 종목만 자동 인식됩니다.")
 
-    # 인기 종목 빠른 선택 콜백
-    def set_symbol(sym):
-        st.session_state["symbol_input"] = sym
-
-    # 입력 영역
     col1, col2 = st.columns(2)
     with col1:
-        if "symbol_input" not in st.session_state:
-            st.session_state["symbol_input"] = "엔비디아"
         user_symbol = st.text_input(
-            "종목 이름/티커 직접 입력 (예: NVDA, 엔비디아, META, TQQQ, 삼성전자)",
-            key="symbol_input"
+            "종목 이름/티커 직접 입력 (예: NVDA, 엔비디아, META, TQQQ)",
+            value="엔비디아",
         )
         holding_type = st.radio("보유 상태", ["보유 중", "신규 진입 검토"], horizontal=True)
     with col2:
         mode_name = st.selectbox("투자 모드 선택", ["단타", "스윙", "장기"], index=1)
 
-    st.markdown("##### 🔍 인기 종목 빠른 선택 (버튼 클릭 시 위 입력 칸에 자동 입력)")
-    btn_cols = st.columns(4)
-    popular_to_show = POPULAR_SYMBOLS
-    for i, sym in enumerate(popular_to_show):
-        with btn_cols[i % 4]:
-            st.button(sym, key=f"symbtn_{sym}", on_click=set_symbol, args=(sym,))
+    # 인기 종목 드롭다운
+    popular_choice = st.selectbox(
+        "📂 인기 종목에서 선택 (선택 시 위 직접 입력 대신 사용)",
+        options=["선택 안 함"] + POPULAR_SYMBOLS,
+        index=0,
+    )
+    st.caption("→ 아무 종목이나 직접 치고 싶으면 위 입력 칸만 쓰면 되고,\n   인기 종목 중에서 고를 땐 여기서 선택하면 됩니다.")
 
     col3, col4 = st.columns(2)
     avg_price = 0.0
@@ -504,8 +473,14 @@ def main():
     if not run:
         return
 
-    symbol = normalize_symbol(user_symbol)
-    display_name = user_symbol
+    # 인기 종목을 선택한 경우 그걸 우선 사용
+    if popular_choice != "선택 안 함":
+        symbol = popular_choice
+        display_name = popular_choice
+    else:
+        symbol = normalize_symbol(user_symbol)
+        display_name = user_symbol
+
     cfg = get_mode_config(mode_name)
 
     with st.spinner("데이터 불러오는 중..."):
