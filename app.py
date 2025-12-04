@@ -80,6 +80,14 @@ KOREAN_TICKER_MAP = {
     "아이쉐어즈비트코인": "IBIT",
 }
 
+POPULAR_SYMBOLS = [
+    "NVDA", "META", "TSLA", "AAPL", "MSFT", "AMZN",
+    "QQQ", "TQQQ", "SOXL", "SPY", "VOO",
+    "COIN", "MSTR", "RIOT", "MARA",
+    "ORCL", "PYPL"
+]
+
+
 def normalize_symbol(user_input: str) -> str:
     """한글이면 티커로 변환, 아니면 공백 제거 후 대문자로"""
     name = user_input.strip()
@@ -108,7 +116,7 @@ def fetch_fgi():
 
 
 # -------------------------------
-# USD/KRW 환율 조회 (원화 환산용)
+# USD/KRW 환율 조회
 # -------------------------------
 def get_usdkrw_rate():
     try:
@@ -145,13 +153,14 @@ def get_price_data(symbol, period="6mo"):
 
 
 # -------------------------------
-# 지표 계산 (볼밴 / MACD / 스토캐 / RSI)
+# 지표 계산 (볼밴 / MACD / 스토캐 / RSI / MA5)
 # -------------------------------
 def add_indicators(df):
     close = df["Close"]
     high = df["High"]
     low = df["Low"]
 
+    df["MA5"] = close.rolling(5).mean()
     ma20 = close.rolling(20).mean()
     std20 = close.rolling(20).std()
     df["MA20"] = ma20
@@ -178,6 +187,107 @@ def add_indicators(df):
     df["RSI14"] = rsi
 
     return df.dropna()
+
+
+# -------------------------------
+# 지표 코멘트들
+# -------------------------------
+def comment_rsi(rsi):
+    if rsi < 30:
+        return "강한 과매도"
+    elif rsi < 40:
+        return "약한 과매도"
+    elif rsi < 60:
+        return "중립"
+    elif rsi < 70:
+        return "약한 과열"
+    else:
+        return "강한 과열"
+
+
+def comment_stoch(k, d):
+    if k > 80 and d > 80:
+        return "과열권"
+    elif k < 20 and d < 20:
+        return "침체/과매도권"
+    elif k > d and k > 50:
+        return "상승 모멘텀"
+    elif k < d and k < 50:
+        return "하락 모멘텀"
+    else:
+        return "중립"
+
+
+def comment_macd(macd, signal):
+    if macd > 0 and macd > signal:
+        return "상승 모멘텀 우위"
+    elif macd < 0 and macd < signal:
+        return "하락 모멘텀 우위"
+    elif macd > signal:
+        return "골든크로스(상방 전환 시도)"
+    elif macd < signal:
+        return "데드크로스(하방 전환 시도)"
+    else:
+        return "중립"
+
+
+def comment_bb(price, bbl, bbu, ma20):
+    if price > bbu:
+        return "밴드 상단 돌파(과열/급등 구간)"
+    elif price > ma20:
+        return "상단 영역(강세 추세)"
+    elif price < bbl:
+        return "밴드 하단 이탈(과매도/급락 구간)"
+    else:
+        return "중단~하단 영역(조정/중립)"
+
+
+# -------------------------------
+# 단기 상/하방 코멘트
+# -------------------------------
+def short_term_bias(last_row):
+    price = float(last_row["Close"])
+    ma5 = float(last_row["MA5"])
+    ma20 = float(last_row["MA20"])
+    macd = float(last_row["MACD"])
+    macds = float(last_row["MACD_SIGNAL"])
+    rsi = float(last_row["RSI14"])
+    k = float(last_row["STOCH_K"])
+    d = float(last_row["STOCH_D"])
+
+    score = 0
+
+    if price > ma20:
+        score += 1
+    else:
+        score -= 1
+
+    if price > ma5:
+        score += 1
+    else:
+        score -= 1
+
+    if macd > macds:
+        score += 1
+    else:
+        score -= 1
+
+    if rsi > 60:
+        score += 1
+    elif rsi < 40:
+        score -= 1
+
+    if k > d and k > 50:
+        score += 1
+    elif k < d and k < 50:
+        score -= 1
+
+    if score >= 3:
+        return "단기 상방 우세 (며칠 내 상승 압력이 상대적으로 큼)"
+    elif score <= -3:
+        return "단기 하방 우세 (며칠 내 조정/하락 압력이 큼)"
+    else:
+        return "단기 중립~혼조 (방향성이 뚜렷하지 않음)"
 
 
 # -------------------------------
@@ -209,7 +319,7 @@ def make_signal(row, avg_price, cfg, fgi=None):
     mild_overbought   = (price > ma20 and (k > 70 or rsi > 60))
     strong_oversold   = (price < bbl and k < 20 and d < 20 and rsi < 35)
 
-    # 평단 없음 = 신규 진입 검토
+    # 평단 없음 = 신규 진입 관점
     if avg_price <= 0:
         if fear and price < bbl * 1.02 and k < 30 and rsi < 45:
             return "초기 매수 관심 (공포 국면)"
@@ -329,34 +439,51 @@ def calc_levels(df, last, avg_price, cfg):
 def main():
     st.set_page_config(page_title="내 주식 자동판단기", page_icon="📈", layout="centered")
 
+    if "history" not in st.session_state:
+        st.session_state["history"] = []
+
     st.title("📈 내 주식 자동판단기")
     st.write("단타 · 스윙 · 장기 + FGI + 기술적 지표 기반으로 매수/매도/물타기/신규진입 구간을 정리해줍니다.")
     st.caption("※ 종목 입력은 영어 티커가 가장 정확합니다. 한글 이름은 일부 인기 종목만 자동 인식됩니다.")
 
-    # 입력 폼 (화면 중앙)
-    with st.form("input_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            user_symbol = st.text_input("종목 이름/티커 (예: NVDA, 엔비디아, META, TQQQ)", value="엔비디아")
-            holding_type = st.radio("보유 상태", ["보유 중", "신규 진입 검토"], horizontal=True)
-        with col2:
-            mode_name = st.selectbox("투자 모드 선택", ["단타", "스윙", "장기"], index=1)
+    # 인기/기록 종목 자동완성용 선택박스
+    options = sorted(set(POPULAR_SYMBOLS + st.session_state["history"]))
+    selected_from_list = st.selectbox(
+        "최근 검색/인기 종목 (선택 시 위 입력 대신 사용 가능)",
+        options=["선택 안 함"] + options,
+        index=0
+    )
 
-        col3, col4 = st.columns(2)
-        avg_price = 0.0
-        shares = 0
-        if holding_type == "보유 중":
-            with col3:
-                avg_price = st.number_input("내 평단가 (USD)", min_value=0.0, value=0.0, step=0.01)
-            with col4:
-                shares = st.number_input("보유 수량 (주)", min_value=0, value=0, step=1)
+    # 입력 영역 (폼 없이 바로)
+    col1, col2 = st.columns(2)
+    with col1:
+        user_symbol = st.text_input("종목 이름/티커 (예: NVDA, 엔비디아, META, TQQQ)", value="엔비디아")
+        holding_type = st.radio("보유 상태", ["보유 중", "신규 진입 검토"], horizontal=True)
+    with col2:
+        mode_name = st.selectbox("투자 모드 선택", ["단타", "스윙", "장기"], index=1)
 
-        submitted = st.form_submit_button("🔍 분석하기")
+    col3, col4 = st.columns(2)
+    avg_price = 0.0
+    shares = 0
+    if holding_type == "보유 중":
+        with col3:
+            avg_price = st.number_input("내 평단가 (USD)", min_value=0.0, value=0.0, step=0.01)
+        with col4:
+            shares = st.number_input("보유 수량 (주)", min_value=0, value=0, step=1)
 
-    if not submitted:
+    run = st.button("🔍 분석하기")
+
+    if not run:
         return
 
-    symbol = normalize_symbol(user_symbol)
+    # 선택박스에서 고른 게 있으면 그걸 우선 사용
+    if selected_from_list != "선택 안 함" and not user_symbol.strip():
+        symbol = selected_from_list
+        display_name = selected_from_list
+    else:
+        symbol = normalize_symbol(user_symbol)
+        display_name = user_symbol
+
     cfg = get_mode_config(mode_name)
 
     with st.spinner("데이터 불러오는 중..."):
@@ -374,12 +501,20 @@ def main():
 
         last = df.iloc[-1]
 
+    # 검색 성공하면 히스토리에 저장
+    if symbol not in st.session_state["history"]:
+        st.session_state["history"].append(symbol)
+        st.session_state["history"] = st.session_state["history"][-30:]  # 최근 30개만 유지
+
     price = float(last["Close"])
     profit_pct = (price - avg_price) / avg_price * 100 if avg_price > 0 else 0.0
     total_pnl = (price - avg_price) * shares if (shares > 0 and avg_price > 0) else 0.0
 
-    signal = make_signal(last, avg_price if holding_type == "보유 중" else 0.0, cfg, fgi)
-    buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, avg_price if holding_type == "보유 중" else 0.0, cfg)
+    # 신규 진입 모드는 avg_price=0으로 신호 계산
+    eff_avg_price = avg_price if holding_type == "보유 중" else 0.0
+    signal = make_signal(last, eff_avg_price, cfg, fgi)
+    buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, eff_avg_price, cfg)
+    bias_comment = short_term_bias(last)
 
     near_buy_zone = (price >= buy_low * 0.97 and price <= buy_high * 1.03)
     near_sell_zone = (price >= tp0 * 0.97 and price <= tp2 * 1.05)
@@ -396,7 +531,7 @@ def main():
         context = " (신규 진입/분할 매수 구간에 가깝습니다)"
 
     st.subheader("🧾 요약")
-    st.write(f"- 입력 종목: **{user_symbol}** → 실제 티커: **{symbol}**")
+    st.write(f"- 입력 종목: **{display_name}** → 실제 티커: **{symbol}**")
     if fgi is not None:
         st.write(f"- 공포·탐욕지수(FGI, CNN): **{fgi:.1f}**")
     else:
@@ -418,15 +553,17 @@ def main():
             rate = get_usdkrw_rate()
             pnl_krw = total_pnl * rate
             st.write(f"- 보유 수량: **{shares} 주**")
-            st.write(f"- 평가손익: **{total_pnl:,.2f} USD** (약 **{pnl_krw:,.0f} KRW** 기준 환율 {rate:,.2f}원)")
+            st.write(f"- 평가손익: **{total_pnl:,.2f} USD** (약 **{pnl_krw:,.0f} KRW**, 환율 {rate:,.2f}원 기준)")
     else:
         st.write("- 현재는 보유 중이 아니라, 신규 진입 시점만 검토합니다.")
 
     st.subheader("🎯 매매 판단")
     st.write(f"**추천 액션:** ⭐ {signal}{context} ⭐")
+    st.write(f"**단기 방향성 코멘트:** {bias_comment}")
 
     st.subheader("📌 기술적 기준 가격 레벨 (참고용)")
     st.write(f"- 매수/추가매수 구간: **{buy_low:.2f} ~ {buy_high:.2f} USD**")
+
     if holding_type == "보유 중":
         st.write(f"- 0차 매도 추천가 (선행 익절): **{tp0:.2f} USD**")
         st.write(f"- 1차 매도 추천가: **{tp1:.2f} USD**")
@@ -442,14 +579,25 @@ def main():
         st.caption("※ 신규 진입은 한 번에 몰입하기보다, 1차·2차로 나누어 분할 매수하는 것을 전제로 한 가이드입니다.")
 
     st.subheader("📊 지표 상태 (마지막 일봉 기준)")
-    st.write(f"- 20일선(MA20): **{last['MA20']:.2f}**")
-    st.write(f"- 볼린저 하단(BBL): **{last['BBL']:.2f}**")
-    st.write(f"- 볼린저 상단(BBU): **{last['BBU']:.2f}**")
-    st.write(f"- 스토캐스틱 K: **{last['STOCH_K']:.2f}**")
-    st.write(f"- 스토캐스틱 D: **{last['STOCH_D']:.2f}**")
-    st.write(f"- MACD: **{last['MACD']:.4f}**")
-    st.write(f"- MACD Signal: **{last['MACD_SIGNAL']:.4f}**")
-    st.write(f"- RSI(14): **{last['RSI14']:.2f}**")
+
+    rsi = float(last["RSI14"])
+    k = float(last["STOCH_K"])
+    d = float(last["STOCH_D"])
+    macd = float(last["MACD"])
+    macds = float(last["MACD_SIGNAL"])
+    bbl = float(last["BBL"])
+    bbu = float(last["BBU"])
+    ma20 = float(last["MA20"])
+
+    st.write(f"- 20일선(MA20): **{ma20:.2f}**  ({'강세' if price > ma20 else '약세/조정'})")
+    st.write(f"- 볼린저 하단(BBL): **{bbl:.2f}**, 상단(BBU): **{bbu:.2f}**  ({comment_bb(price, bbl, bbu, ma20)})")
+    st.write(f"- 스토캐스틱 K: **{k:.2f}**, D: **{d:.2f}**  ({comment_stoch(k, d)})")
+    st.write(f"- MACD: **{macd:.4f}**, Signal: **{macds:.4f}**  ({comment_macd(macd, macds)})")
+    st.write(f"- RSI(14): **{rsi:.2f}**  ({comment_rsi(rsi)})")
+
+    st.subheader("📈 가격 / 밴드 차트 (최근 약 6개월)")
+    chart_df = df[["Close", "MA20", "BBL", "BBU"]].tail(120)
+    st.line_chart(chart_df)
 
 
 if __name__ == "__main__":
