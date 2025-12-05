@@ -81,7 +81,7 @@ KOREAN_TICKER_MAP = {
     "아이쉐어즈비트코인": "IBIT",
 }
 
-# 인기 종목 (자동완성 힌트에만 사용)
+# 인기 종목 (자동완성 힌트용)
 POPULAR_SYMBOLS = [
     "NVDA", "META", "TSLA", "AAPL", "MSFT", "AMZN",
     "QQQ", "TQQQ", "SOXL", "SPY", "VOO",
@@ -89,9 +89,9 @@ POPULAR_SYMBOLS = [
     "ORCL", "PYPL", "NFLX", "PLTR", "AVGO",
 ]
 
-# 스캐너 유니버스 (스캔 대상 종목들)
+# 스캐너 유니버스 (AI/데이터센터/클라우드/러셀2000까지 확장)
 SCAN_UNIVERSE = {
-    # 메가테크 / 반도체
+    # 메가테크 / 반도체 / AI 인프라
     "NVDA": "엔비디아",
     "AMD": "AMD",
     "AVGO": "브로드컴",
@@ -104,7 +104,14 @@ SCAN_UNIVERSE = {
     "ADBE": "어도비",
     "CRM": "세일즈포스",
     "ORCL": "오라클",
+    "ARM": "ARM",
+    "ANET": "Arista Networks",
+    "MPWR": "Monolithic Power",
+    "MCHP": "Microchip",
+    "ON": "ON Semi",
+    "LSCC": "Lattice Semi",
 
+    # 빅테크 / 플랫폼
     "AAPL": "애플",
     "MSFT": "마이크로소프트",
     "GOOGL": "알파벳A",
@@ -113,6 +120,36 @@ SCAN_UNIVERSE = {
     "AMZN": "아마존",
     "TSLA": "테슬라",
     "NFLX": "넷플릭스",
+
+    # 클라우드 / 데이터 / 사이버보안 / SW
+    "SNOW": "Snowflake",
+    "MDB": "MongoDB",
+    "DDOG": "Datadog",
+    "NET": "Cloudflare",
+    "ZS": "Zscaler",
+    "CRWD": "CrowdStrike",
+    "PANW": "Palo Alto",
+    "OKTA": "Okta",
+    "NOW": "ServiceNow",
+    "TEAM": "Atlassian",
+    "SHOP": "Shopify",
+    "U": "Unity",
+    "DOCU": "DocuSign",
+    "HUBS": "HubSpot",
+    "RBLX": "Roblox",
+    "TWLO": "Twilio",
+    "SMAR": "Smartsheet",
+    "ESTC": "Elastic",
+    "APPF": "AppFolio",
+    "AI": "C3.ai",
+
+    # 코인/채굴/비트코인 노출
+    "COIN": "코인베이스",
+    "MSTR": "마이크로스트래티지",
+    "RIOT": "Riot",
+    "MARA": "마라톤디지털",
+    "CLSK": "클린스파크",
+    "BITF": "비트팜",
 
     # ETF / 레버리지
     "QQQ": "나스닥100",
@@ -128,6 +165,7 @@ SCAN_UNIVERSE = {
     "LABU": "바이오3배",
     "LABD": "바이오인버스3배",
     "ARKK": "ARKK",
+    "IWM": "Russell 2000",
 
     # 소비/브랜드
     "MCD": "맥도날드",
@@ -137,6 +175,7 @@ SCAN_UNIVERSE = {
     "WMT": "월마트",
     "KO": "코카콜라",
     "PEP": "펩시",
+    "CMG": "Chipotle",
 
     # 헬스케어
     "JNJ": "존슨앤존슨",
@@ -145,6 +184,8 @@ SCAN_UNIVERSE = {
     "UNH": "유나이티드헬스",
     "ABBV": "애브비",
     "MRK": "머크",
+    "LLY": "Eli Lilly",
+    "REGN": "Regeneron",
 
     # 금융
     "JPM": "JP모건",
@@ -152,13 +193,23 @@ SCAN_UNIVERSE = {
     "C": "씨티",
     "GS": "골드만삭스",
     "MS": "모건스탠리",
+    "SCHW": "Charles Schwab",
 
-    # 에너지/산업
+    # 에너지/전력/데이터센터 인프라
     "XOM": "엑슨모빌",
     "CVX": "셰브론",
+    "NEE": "NextEra Energy",
+    "DUK": "Duke Energy",
+    "SO": "Southern Co",
+    "EXC": "Exelon",
+    "EQIX": "Equinix(데이터센터 REIT)",
+    "DLR": "Digital Realty",
+
+    # 산업/기타
     "CAT": "캐터필러",
     "MMM": "3M",
     "HON": "허니웰",
+    "LMT": "Lockheed Martin",
 
     # 통신/엔터
     "DIS": "디즈니",
@@ -205,6 +256,24 @@ def get_usdkrw_rate():
         return float(df["Close"].iloc[-1])
     except Exception:
         return 1350.0  # 실패 시 대략값
+
+
+# -------------------------------
+# 현재가(시외 포함 가능) 조회
+# -------------------------------
+def get_last_extended_price(symbol: str):
+    """
+    정규장 + 프리/애프터마켓까지 포함한
+    가장 최근 1분봉 종가를 반환 (참고용)
+    """
+    try:
+        t = yf.Ticker(symbol)
+        df = t.history(period="1d", interval="1m", auto_adjust=False, prepost=True)
+        if df.empty:
+            return None
+        return float(df["Close"].iloc[-1])
+    except Exception:
+        return None
 
 
 # -------------------------------
@@ -263,6 +332,9 @@ def add_indicators(df):
     rs = roll_up / roll_down
     rsi = 100 - (100 / (1 + rs))
     df["RSI14"] = rsi
+
+    # 스캐너용 MA50도 여기서 같이 계산해 두면 편함
+    df["MA50"] = close.rolling(50).mean()
 
     return df.dropna()
 
@@ -380,7 +452,7 @@ def short_term_bias(last_row):
 
 
 # -------------------------------
-# 매매 신호 로직
+# 매매 신호 로직 (단일 종목 분석용)
 # -------------------------------
 def make_signal(row, avg_price, cfg, fgi=None):
     price = float(row["Close"])
@@ -520,52 +592,57 @@ def calc_levels(df, last, avg_price, cfg):
 
 
 # -------------------------------
-# 스캐너 조건식들
+# 스캐너 조건식들 (공격적으로 조정)
 # -------------------------------
 def scan_trend_start(df: pd.DataFrame):
     """
-    상승추세 시작:
-    - MA20 > MA50 (단기 > 중기)
-    - 최근 3~7일 전에는 MA20 <= MA50 (골든크로스/추세전환)
-    - 현재가 > MA20
-    - RSI 45~65
+    상승추세 시작 (공격형):
+    - MA20 > MA50
+    - 최근 5~15일 안에 MA20이 MA50을 처음 상향돌파했거나, 방금 돌파 직후
+    - 가격 > MA20
+    - RSI 40~70
+    - 최근 3일 중 2일 이상 양봉 or 종가 상승
     """
-    if len(df) < 60 or "MA50" not in df.columns:
-        # MA50이 없다면 만든다
-        df["MA50"] = df["Close"].rolling(50).mean()
-    recent = df.dropna().tail(10)
-    if len(recent) < 10:
+    df = df.copy().dropna()
+    if len(df) < 60:
         return False, ""
 
+    recent = df.tail(20)
     last = recent.iloc[-1]
+    price = last["Close"]
     ma20 = last["MA20"]
     ma50 = last["MA50"]
-    price = last["Close"]
     rsi = last["RSI14"]
 
     if ma20 <= ma50:
         return False, ""
 
-    past = df.dropna().iloc[-20:-10]
-    if "MA50" not in past.columns:
-        past["MA50"] = past["Close"].rolling(50).mean()
-    if (past["MA20"] > past["MA50"]).all():
+    past = recent.iloc[:-3]
+    cross_mask = (past["MA20"].shift(1) <= past["MA50"].shift(1)) & (past["MA20"] > past["MA50"])
+    if not cross_mask.tail(15).any():
         return False, ""
 
-    if not (price > ma20 and 45 <= rsi <= 65):
+    if not (price > ma20 and 40 <= rsi <= 70):
         return False, ""
 
-    comment = "MA20이 MA50을 상향 돌파하며 초기 상승 추세가 형성되는 구간입니다."
+    last3 = recent.tail(3)
+    pos_days = (last3["Close"] > last3["Open"]).sum()
+    if pos_days < 2:
+        return False, ""
+
+    comment = "MA20>MA50 골든크로스 이후, 최근 3일 중 2일 이상 양봉으로 초기 상승 추세가 강화되는 구간입니다."
     return True, comment
 
 
 def scan_momentum_spike(df: pd.DataFrame):
     """
-    급등주:
-    - 당일 +5% 이상 또는 5일 +12% 이상
-    - 거래량 20일 평균의 1.5배 이상
-    - RSI > 60
+    급등주 (공격형):
+    - 당일 +3% 이상 또는 5일 +8% 이상
+    - 거래량 20일 평균의 1.3배 이상
+    - RSI > 55
+    - 최근 3일 중 2일 이상 상승
     """
+    df = df.copy().dropna()
     if len(df) < 30:
         return False, ""
 
@@ -585,23 +662,34 @@ def scan_momentum_spike(df: pd.DataFrame):
     vol_avg20 = vol.tail(20).mean()
     rsi = last["RSI14"]
 
-    cond_ret = (ret_1d >= 5) or (ret_5d >= 12)
-    cond_vol = vol_now >= vol_avg20 * 1.5
-    cond_rsi = rsi >= 60
+    cond_ret = (ret_1d >= 3) or (ret_5d >= 8)
+    cond_vol = vol_now >= vol_avg20 * 1.3
+    cond_rsi = rsi >= 55
 
-    if cond_ret and cond_vol and cond_rsi:
-        comment = f"단기 {ret_1d:.1f}% / 5일 {ret_5d:.1f}% 상승, 거래량 급증과 모멘텀 과열이 동반된 급등 패턴입니다."
+    last3 = df.tail(3)
+    up_days = (last3["Close"] > last3["Open"]).sum()
+    cond_up = up_days >= 2
+
+    if cond_ret and cond_vol and cond_rsi and cond_up:
+        vol_ratio = vol_now / vol_avg20 if vol_avg20 > 0 else 1.0
+        comment = (
+            f"당일 {ret_1d:.1f}%, 5일 {ret_5d:.1f}% 상승, "
+            f"거래량 {vol_ratio:.1f}배, 최근 3일 중 {up_days}일 상승한 모멘텀 급등 패턴입니다."
+        )
         return True, comment
     return False, ""
 
 
 def scan_reversal(df: pd.DataFrame):
     """
-    추세 전환(바닥 반등):
-    - 최근 10~20일 내 RSI가 30 이하까지 내려갔다가 다시 40 이상 회복
+    추세 전환(바닥 반등) (공격형):
+    - 최근 20일 내 RSI가 30 이하까지 내려간 적 있음
+    - 현재 RSI ≥ 40
+    - 최근 3일 연속 종가가 상승 or 캔들이 양봉 2개 이상
     - STOCH K가 D를 아래에서 위로 골든크로스
-    - 전일 종가 < BBL, 오늘 종가 > BBL*0.99 (하단 밴드 밖 → 안으로 재진입)
+    - 전일 종가 < BBL, 오늘 종가 > BBL*0.99
     """
+    df = df.copy().dropna()
     if len(df) < 40:
         return False, ""
 
@@ -612,6 +700,12 @@ def scan_reversal(df: pd.DataFrame):
     if rsi_series.min() > 30:
         return False, ""
     if last["RSI14"] < 40:
+        return False, ""
+
+    last3 = recent.tail(3)
+    cond_close_up = (last3["Close"].diff() > 0).sum() >= 2
+    cond_candle_up = (last3["Close"] > last3["Open"]).sum() >= 2
+    if not (cond_close_up or cond_candle_up):
         return False, ""
 
     k = recent["STOCH_K"]
@@ -626,28 +720,24 @@ def scan_reversal(df: pd.DataFrame):
     if not cond_band:
         return False, ""
 
-    comment = "과매도 구간 후 RSI/스토캐스틱이 회복하며, 하단 밴드 밖에서 안으로 재진입하는 바닥 반등 패턴입니다."
+    comment = "과매도 후 RSI·스토캐스틱 회복, 하단 밴드 밖→안 재진입 + 최근 연속 상승으로 바닥 반등 가능성이 높은 구간입니다."
     return True, comment
 
 
 def scan_pullback(df: pd.DataFrame):
     """
-    눌림목 반등:
-    - 중기 상승 추세: MA20 > MA50
-    - 최근 5~10일 동안 가격이 MA20 근처까지 조정
-    - 오늘 종가 > 어제 종가 (반등 시도)
-    - RSI 35~60
+    눌림목 반등 (공격형):
+    - MA20 > MA50 (중기 상승 추세)
+    - 최근 5~10일 동안 가격이 MA20 근처(-3%~+3%)까지 눌렸다가,
+      오늘 종가가 전일 대비 상승
+    - RSI 35~65
+    - 최근 조정 구간에서 거래량이 줄었다가, 오늘 거래량이 다시 평균 이상
     """
+    df = df.copy().dropna()
     if len(df) < 50:
         return False, ""
 
-    if "MA50" not in df.columns:
-        df["MA50"] = df["Close"].rolling(50).mean()
-
-    recent = df.dropna().tail(10)
-    if len(recent) < 10:
-        return False, ""
-
+    recent = df.tail(15)
     last = recent.iloc[-1]
     prev = recent.iloc[-2]
 
@@ -664,10 +754,19 @@ def scan_pullback(df: pd.DataFrame):
         return False, ""
 
     rsi = last["RSI14"]
-    if not (35 <= rsi <= 60):
+    if not (35 <= rsi <= 65):
         return False, ""
 
-    comment = "상승 추세 속에서 MA20 근처 눌림 후 캔들이 다시 반등하는 눌림목 재상승 패턴입니다."
+    vol = df["Volume"]
+    recent_vol = vol.tail(10)
+    avg_vol = recent_vol.mean()
+    min_vol = recent_vol.min()
+    today_vol = last["Volume"]
+
+    if not (today_vol >= avg_vol and min_vol <= avg_vol * 0.9):
+        return False, ""
+
+    comment = "중기 상승 추세에서 MA20 부근 눌림 후, 거래량 회복과 함께 다시 양봉 반등이 나오는 눌림목 재상승 패턴입니다."
     return True, comment
 
 
@@ -697,7 +796,7 @@ def run_multi_scanner(selected_scans):
         }
 
         if "상승추세 초기" in selected_scans:
-            ok, comment = scan_trend_start(df.copy())
+            ok, comment = scan_trend_start(df)
             if ok:
                 entry = base_info.copy()
                 entry["코멘트"] = comment
@@ -718,7 +817,7 @@ def run_multi_scanner(selected_scans):
                 results["추세 전환"].append(entry)
 
         if "눌림목 반등" in selected_scans:
-            ok, comment = scan_pullback(df.copy())
+            ok, comment = scan_pullback(df)
             if ok:
                 entry = base_info.copy()
                 entry["코멘트"] = comment
@@ -798,11 +897,15 @@ def main():
 
             last = df.iloc[-1]
 
+        # 최근 시외 포함 가격
+        ext_price = get_last_extended_price(symbol)
+
+        # 최근 검색 목록 업데이트
         if symbol not in st.session_state["recent_symbols"]:
             st.session_state["recent_symbols"].append(symbol)
             st.session_state["recent_symbols"] = st.session_state["recent_symbols"][-30:]
 
-        price = float(last["Close"])
+        price = float(last["Close"])  # 정규장 종가
         profit_pct = (price - avg_price) / avg_price * 100 if avg_price > 0 else 0.0
         total_pnl = (price - avg_price) * shares if (shares > 0 and avg_price > 0) else 0.0
 
@@ -833,14 +936,22 @@ def main():
             st.write("- 공포·탐욕지수(FGI): 조회 실패 → 시장심리는 제외하고 지표만 사용")
 
         st.subheader("💼 보유/신규 상태")
-        st.write(f"- 현재가: **{price:.2f} USD**")
+        st.write(f"- 정규장 기준 현재가(종가): **{price:.2f} USD**")
+        if ext_price is not None:
+            diff_pct = (ext_price - price) / price * 100
+            sign = "+" if diff_pct >= 0 else ""
+            st.write(
+                f"- 최근 가격 (시외 포함 가능): **{ext_price:.2f} USD** "
+                f"(정규장 종가 대비 {sign}{diff_pct:.2f}%)"
+            )
+
         st.write(f"- 투자 모드: **{cfg['name']}** (기간: {cfg['period']}, 익절: +{cfg['take_profit_pct']}%, 손절: -{cfg['stop_loss_pct']}%)")
         st.write(f"- 보유 상태: **{holding_type}**")
 
         if holding_type == "보유 중":
             if avg_price > 0:
                 st.write(f"- 평단가: **{avg_price:.2f} USD**")
-                st.write(f"- 수익률: **{profit_pct:.2f}%**")
+                st.write(f"- 수익률: **{profit_pct:.2f}%** (정규장 기준)")
             else:
                 st.write("- 평단가: 입력 안 함")
                 st.write("- 수익률: 평단이 없어 계산 불가")
@@ -896,8 +1007,7 @@ def main():
     # 2) 종목 스캐너 모드
     # ==========================
     else:
-        st.write("인기 종목/ETF 유니버스를 대상으로, 상승 추세 시작 / 급등 / 추세 전환 / 눌림목 반등 패턴을 자동으로 찾아줍니다.")
-
+        st.write("인기 종목/ETF + AI/클라우드/데이터센터/러셀2000 일부를 대상으로, 상승 추세 시작 / 급등 / 추세 전환 / 눌림목 반등 패턴을 자동으로 찾아줍니다.")
         scan_options = ["상승추세 초기", "급등주", "추세 전환", "눌림목 반등"]
         selected = st.multiselect(
             "찾고 싶은 패턴 선택 (복수 선택 가능)",
