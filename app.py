@@ -3,6 +3,8 @@ import yfinance as yf
 import pandas as pd
 import requests
 import numpy as np
+import time
+from yfinance.exceptions import YFRateLimitError
 
 # -------------------------------
 # 한글 이름 → 티커 매핑 (미국 위주)
@@ -300,7 +302,7 @@ def get_price_data(symbol, period="6mo"):
 
 
 # -------------------------------
-# 지표 계산 (볼밴 / MACD / 스토캐 / RSI / MA5)
+# 지표 계산 (볼밴 / MACD / 스토캐 / RSI / MA5/MA50)
 # -------------------------------
 def add_indicators(df):
     close = df["Close"]
@@ -333,18 +335,24 @@ def add_indicators(df):
     rsi = 100 - (100 / (1 + rs))
     df["RSI14"] = rsi
 
-    # 스캐너용 MA50도 여기서 같이 계산해 두면 편함
+    # 스캐너용 MA50
     df["MA50"] = close.rolling(50).mean()
 
     return df.dropna()
 
 
 # -------------------------------
-# 스캐너용: 데이터+지표 (캐시)
+# 스캐너용: 데이터+지표 (캐시 + 예외 처리)
 # -------------------------------
 @st.cache_data(ttl=1800)
 def load_price_for_scan(symbol: str, period: str = "6mo"):
-    df = get_price_data(symbol, period)
+    try:
+        df = get_price_data(symbol, period)
+    except YFRateLimitError:
+        return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
     if df.empty or len(df) < 40:
         return pd.DataFrame()
     return add_indicators(df)
@@ -592,16 +600,11 @@ def calc_levels(df, last, avg_price, cfg):
 
 
 # -------------------------------
-# 스캐너 조건식들 (공격적으로 조정)
+# 스캐너 조건식들 (공격형)
 # -------------------------------
 def scan_trend_start(df: pd.DataFrame):
     """
-    상승추세 시작 (공격형):
-    - MA20 > MA50
-    - 최근 5~15일 안에 MA20이 MA50을 처음 상향돌파했거나, 방금 돌파 직후
-    - 가격 > MA20
-    - RSI 40~70
-    - 최근 3일 중 2일 이상 양봉 or 종가 상승
+    상승추세 시작 (공격형)
     """
     df = df.copy().dropna()
     if len(df) < 60:
@@ -636,11 +639,7 @@ def scan_trend_start(df: pd.DataFrame):
 
 def scan_momentum_spike(df: pd.DataFrame):
     """
-    급등주 (공격형):
-    - 당일 +3% 이상 또는 5일 +8% 이상
-    - 거래량 20일 평균의 1.3배 이상
-    - RSI > 55
-    - 최근 3일 중 2일 이상 상승
+    급등주 (공격형)
     """
     df = df.copy().dropna()
     if len(df) < 30:
@@ -682,12 +681,7 @@ def scan_momentum_spike(df: pd.DataFrame):
 
 def scan_reversal(df: pd.DataFrame):
     """
-    추세 전환(바닥 반등) (공격형):
-    - 최근 20일 내 RSI가 30 이하까지 내려간 적 있음
-    - 현재 RSI ≥ 40
-    - 최근 3일 연속 종가가 상승 or 캔들이 양봉 2개 이상
-    - STOCH K가 D를 아래에서 위로 골든크로스
-    - 전일 종가 < BBL, 오늘 종가 > BBL*0.99
+    추세 전환(바닥 반등) (공격형)
     """
     df = df.copy().dropna()
     if len(df) < 40:
@@ -726,12 +720,7 @@ def scan_reversal(df: pd.DataFrame):
 
 def scan_pullback(df: pd.DataFrame):
     """
-    눌림목 반등 (공격형):
-    - MA20 > MA50 (중기 상승 추세)
-    - 최근 5~10일 동안 가격이 MA20 근처(-3%~+3%)까지 눌렸다가,
-      오늘 종가가 전일 대비 상승
-    - RSI 35~65
-    - 최근 조정 구간에서 거래량이 줄었다가, 오늘 거래량이 다시 평균 이상
+    눌림목 반등 (공격형)
     """
     df = df.copy().dropna()
     if len(df) < 50:
@@ -770,6 +759,12 @@ def scan_pullback(df: pd.DataFrame):
     return True, comment
 
 
+def chunk_list(lst, size):
+    """리스트를 size개 단위로 잘라주는 유틸"""
+    for i in range(0, len(lst), size):
+        yield lst[i:i+size]
+
+
 def run_multi_scanner(selected_scans):
     results = {
         "상승추세 초기": [],
@@ -778,50 +773,68 @@ def run_multi_scanner(selected_scans):
         "눌림목 반등": [],
     }
 
-    for symbol, name in SCAN_UNIVERSE.items():
-        df = load_price_for_scan(symbol, period="6mo")
-        if df.empty:
-            continue
+    items = list(SCAN_UNIVERSE.items())
+    batch_size = 40  # 40개씩 끊어서 처리
 
-        last = df.iloc[-1]
-        price = float(last["Close"])
-        prev_close = float(df.iloc[-2]["Close"])
-        daily_ret = (price - prev_close) / prev_close * 100
+    for batch_idx, batch in enumerate(chunk_list(items, batch_size)):
+        for symbol, name in batch:
+            try:
+                df = load_price_for_scan(symbol, period="6mo")
+            except YFRateLimitError:
+                # 레이트 리밋 걸리면 잠깐 쉬고 스킵
+                time.sleep(3)
+                continue
+            except Exception:
+                continue
 
-        base_info = {
-            "티커": symbol,
-            "이름": name,
-            "현재가": round(price, 2),
-            "당일수익률(%)": round(daily_ret, 2),
-        }
+            if df.empty:
+                continue
 
-        if "상승추세 초기" in selected_scans:
-            ok, comment = scan_trend_start(df)
-            if ok:
-                entry = base_info.copy()
-                entry["코멘트"] = comment
-                results["상승추세 초기"].append(entry)
+            last = df.iloc[-1]
+            price = float(last["Close"])
+            prev_close = float(df.iloc[-2]["Close"])
+            daily_ret = (price - prev_close) / prev_close * 100
 
-        if "급등주" in selected_scans:
-            ok, comment = scan_momentum_spike(df)
-            if ok:
-                entry = base_info.copy()
-                entry["코멘트"] = comment
-                results["급등주"].append(entry)
+            base_info = {
+                "티커": symbol,
+                "이름": name,
+                "현재가": round(price, 2),
+                "당일수익률(%)": round(daily_ret, 2),
+            }
 
-        if "추세 전환" in selected_scans:
-            ok, comment = scan_reversal(df)
-            if ok:
-                entry = base_info.copy()
-                entry["코멘트"] = comment
-                results["추세 전환"].append(entry)
+            if "상승추세 초기" in selected_scans:
+                ok, comment = scan_trend_start(df)
+                if ok:
+                    entry = base_info.copy()
+                    entry["코멘트"] = comment
+                    results["상승추세 초기"].append(entry)
 
-        if "눌림목 반등" in selected_scans:
-            ok, comment = scan_pullback(df)
-            if ok:
-                entry = base_info.copy()
-                entry["코멘트"] = comment
-                results["눌림목 반등"].append(entry)
+            if "급등주" in selected_scans:
+                ok, comment = scan_momentum_spike(df)
+                if ok:
+                    entry = base_info.copy()
+                    entry["코멘트"] = comment
+                    results["급등주"].append(entry)
+
+            if "추세 전환" in selected_scans:
+                ok, comment = scan_reversal(df)
+                if ok:
+                    entry = base_info.copy()
+                    entry["코멘트"] = comment
+                    results["추세 전환"].append(entry)
+
+            if "눌림목 반등" in selected_scans:
+                ok, comment = scan_pullback(df)
+                if ok:
+                    entry = base_info.copy()
+                    entry["코멘트"] = comment
+                    results["눌림목 반등"].append(entry)
+
+            # 각 심볼 사이 0.15초 대기 → 레이트 리밋 완화
+            time.sleep(0.15)
+
+        # 40개 배치마다 약간 더 쉬기
+        time.sleep(0.5)
 
     return results
 
