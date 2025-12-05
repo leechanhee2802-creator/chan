@@ -591,49 +591,7 @@ def main():
     chart_df = df[["Close", "MA20", "BBL", "BBU"]].tail(120)
     st.line_chart(chart_df)
 
-
-  # ------------------------------------------------------
-    #   멀티 스캐너 모드
-    # ------------------------------------------------------
-    else:
-        with st.sidebar:
-            st.subheader("📊 멀티 스캐너 설정")
-            scan_options = ["상승추세 초기", "급등주", "추세 전환", "눌림목 반등"]
-            selected = st.multiselect(
-                "찾고 싶은 패턴 선택 (복수 선택 가능)",
-                scan_options,
-                default=scan_options
-            )
-            run_scan = st.button("🚀 스캔 실행", use_container_width=True)
-
-            st.markdown("---")
-            st.caption("※ 현재는 대표 인기 종목/ETF 위주 유니버스로 스캔합니다.\n필요하면 종목은 코드에서 계속 추가 가능.")
-
-        if not run_scan:
-            st.info("왼쪽에서 찾고 싶은 패턴을 선택하고 **🚀 스캔 실행**을 눌러주세요.")
-            return
-
-        if not selected:
-            st.warning("적어도 하나 이상의 패턴을 선택해 주세요.")
-            return
-
-        with st.spinner("인기 종목 리스트를 스캔 중입니다..."):
-            results = run_multi_scanner(selected)
-
-        st.markdown("### 📊 스캔 결과")
-
-        for key in selected:
-            items = results.get(key, [])
-            st.markdown(f"#### 🔍 {key}")
-
-            if not items:
-                st.write("- 해당 조건에 맞는 종목이 없습니다.")
-                continue
-
-            df_show = pd.DataFrame(items)
-            st.dataframe(df_show, use_container_width=True)
-
-
 if __name__ == "__main__":
     main()
+
 
