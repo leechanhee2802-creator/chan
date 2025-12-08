@@ -430,7 +430,7 @@ def add_indicators(df):
     rsi = 100 - (100 / (1 + rs))
     df["RSI14"] = rsi
 
-    df["MA50"] = close.rolling(50).mean()  # 스캐너는 지웠지만 MA50은 나중에 쓸 수 있으니 유지
+    df["MA50"] = close.rolling(50).mean()
 
     return df.dropna()
 
@@ -695,7 +695,6 @@ def main():
             refresh = st.button("🔄 새로고침", key="refresh_overview", help="캐시를 비우고 최신 데이터로 다시 불러옵니다.")
         if refresh:
             get_us_market_overview.clear()
-            st.experimental_rerun()
 
         with st.spinner("미국 선물 · 금리 · 달러 · ETF 상황 불러오는 중..."):
             ov = get_us_market_overview()
@@ -715,7 +714,7 @@ def main():
             last = nas.get("last")
             chg = nas.get("chg_pct")
             state = nas.get("state", "")
-            title = "나스닥 선물 (NQ=F)"
+            title = "NQ=F"
             if state:
                 title += f" [{state}]"
             if last is not None and chg is not None:
@@ -729,7 +728,7 @@ def main():
             last = es.get("last")
             chg = es.get("chg_pct")
             state = es.get("state", "")
-            title = "S&P500 선물 (ES=F)"
+            title = "ES=F"
             if state:
                 title += f" [{state}]"
             if last is not None and chg is not None:
@@ -741,8 +740,8 @@ def main():
         with col3:
             max_score = 8
             min_score = -8
-            st.metric("시장 종합 점수", f"{score} / {max_score}", label)
-            st.caption(f"(이론 범위: {min_score} ~ {max_score} | 선물·금리·달러·ETF 기준)")
+            st.metric("시장 점수", f"{score} / {max_score}", label)
+            st.caption(f"(범위: {min_score} ~ {max_score} | 선물·금리·달러·ETF 기준)")
 
         if detail_text:
             st.caption("· " + detail_text)
@@ -757,29 +756,29 @@ def main():
             us10y_chg = rf.get("us10y_chg")
             if us10y is not None:
                 delta = f"{us10y_chg:.3f}p" if us10y_chg is not None else ""
-                st.metric("미 10년물 금리", f"{us10y:.2f}%", delta)
+                st.metric("미 10년물", f"{us10y:.2f}%", delta)
             else:
-                st.metric("미 10년물 금리", "N/A", "")
+                st.metric("미 10년물", "N/A", "")
 
         # 달러
         with col5:
             dxy = rf.get("dxy")
             dxy_chg = rf.get("dxy_chg")
             if dxy is not None and dxy_chg is not None:
-                st.metric("달러 인덱스 (DXY)", f"{dxy:.2f}", f"{dxy_chg:.2f}%")
+                st.metric("DXY", f"{dxy:.2f}", f"{dxy_chg:.2f}%")
             else:
-                st.metric("달러 인덱스 (DXY)", "N/A", "-")
+                st.metric("DXY", "N/A", "-")
 
         # FGI
         with col6:
             if fgi_overview is not None:
-                st.metric("공포·탐욕지수 (FGI)", f"{fgi_overview:.1f}", "")
+                st.metric("FGI", f"{fgi_overview:.1f}", "")
                 if fgi_overview <= 25:
-                    st.caption("극단적 공포 구간")
+                    st.caption("극단적 공포")
                 elif fgi_overview >= 75:
-                    st.caption("극단적 탐욕 구간")
+                    st.caption("극단적 탐욕")
             else:
-                st.metric("공포·탐욕지수 (FGI)", "N/A", "")
+                st.metric("FGI", "N/A", "")
                 st.caption("CNN FGI 조회 실패")
 
         st.markdown("---")
@@ -797,19 +796,24 @@ def main():
                     chg = e.get("chg_pct")
                     state = e.get("market_state", "")
 
-                    title = f"{name} ({sym})"
+                    # 제목: 심플하게 티커 + 상태만
+                    title = sym
                     if state:
                         title += f" [{state}]"
 
+                    # 값: 숫자만 (길이 줄이기)
                     if current is not None:
-                        val_str = f"{current:.2f} ({basis})"
+                        value_str = f"{current:.2f}"
                     else:
-                        val_str = "N/A"
+                        value_str = "N/A"
 
                     delta = f"{chg:.2f}%" if chg is not None else "-"
-                    st.metric(title, val_str, delta)
 
-            st.caption("※ 표시된 %는 항상 전일 종가 대비 기준입니다.")
+                    st.metric(title, value_str, delta)
+                    # 아래에 작은 글씨로 풀네임 + 기준
+                    st.caption(f"{name} · {basis}")
+
+            st.caption("※ %는 항상 전일 종가 대비 기준입니다.")
         else:
             st.write("ETF 데이터를 불러오지 못했습니다.")
 
