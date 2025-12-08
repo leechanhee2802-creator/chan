@@ -219,6 +219,7 @@ SCAN_UNIVERSE = {
     "T": "AT&T",
 }
 
+
 def normalize_symbol(user_input: str) -> str:
     """한글이면 티커로 변환, 아니면 공백 제거 후 대문자"""
     name = user_input.strip()
@@ -278,11 +279,11 @@ def get_last_extended_price(symbol: str):
         return None
 
 
-# ===== 미국 시장 실시간 흐름 관련 추가 =====
+# ===== 미국 시장 실시간 흐름 관련 =====
 @st.cache_data(ttl=60)
 def get_us_market_overview():
     """
-    미국 지수 선물 / 금리 / 달러 / 빅테크(엔비디아, 애플, 마소) 프리/정규 정보를 묶어서 반환
+    미국 지수 선물 / 금리 / 달러 / 빅테크(+ QQQ, SOXX) 프리/정규/애프터 정보를 묶어서 반환
     """
     overview = {}
 
@@ -330,28 +331,52 @@ def get_us_market_overview():
         "dxy_chg": dxy_chg,
     }
 
-    # 빅테크 프리마켓 (NVDA / AAPL / MSFT)
+    # 빅테크 / ETF (NVDA / AAPL / MSFT / QQQ / SOXX)
     bigtech = []
-    for sym, kor_name in [("NVDA", "엔비디아"), ("AAPL", "애플"), ("MSFT", "마이크로소프트")]:
+    bigtech_list = [
+        ("NVDA", "엔비디아"),
+        ("AAPL", "애플"),
+        ("MSFT", "마이크로소프트"),
+        ("QQQ", "QQQ (나스닥100 ETF)"),
+        ("SOXX", "SOXX (반도체 ETF)"),
+    ]
+    for sym, kor_name in bigtech_list:
         try:
-            info = yf.Ticker(sym).info
-            regular = info.get("regularMarketPrice")
+            t = yf.Ticker(sym)
+            info = t.info
+
+            market_state = info.get("marketState", "")
             prev_close = info.get("regularMarketPreviousClose")
             pre = info.get("preMarketPrice")
-            # 프리마켓 변동률: 프리마켓 기준
-            pre_chg_pct = None
-            if pre is not None and prev_close:
-                pre_chg_pct = (pre - prev_close) / prev_close * 100
-            elif regular is not None and prev_close:
-                pre_chg_pct = (regular - prev_close) / prev_close * 100
+            post = info.get("postMarketPrice")
+            regular = info.get("regularMarketPrice")
+
+            # 어떤 가격을 현재 기준으로 쓸지 선택
+            if market_state == "PRE" and pre is not None:
+                current = pre
+                basis = "프리장 기준"
+            elif market_state == "POST" and post is not None:
+                current = post
+                basis = "애프터장 기준"
+            elif regular is not None:
+                current = regular
+                basis = "정규장 기준"
+            else:
+                current = pre or post or regular
+                basis = "기준 불명"
+
+            # 전일 종가 대비 변화율 계산
+            chg_pct = None
+            if current is not None and prev_close:
+                chg_pct = (current - prev_close) / prev_close * 100
 
             bigtech.append(
                 {
                     "symbol": sym,
                     "name": kor_name,
-                    "regular": regular,
-                    "pre": pre,
-                    "pre_chg_pct": pre_chg_pct,
+                    "current": current,
+                    "basis": basis,
+                    "chg_pct": chg_pct,
                 }
             )
         except Exception:
@@ -363,7 +388,8 @@ def get_us_market_overview():
 
 def compute_market_score(overview: dict):
     """
-    선물 + 금리 + 달러 + 빅테크 프리 변동률을 종합해서 점수/코멘트 리턴
+    선물 + 금리 + 달러 + 빅테크/ETF 변동률을 종합해서 점수/코멘트 리턴
+    대략 점수 범위: -7 ~ +8
     """
     if not overview:
         return 0, "데이터 부족", "실시간 시장 데이터를 불러오지 못했습니다."
@@ -375,6 +401,7 @@ def compute_market_score(overview: dict):
     score = 0
     details = []
 
+    # 나스닥 선물
     nas_chg = fut.get("nasdaq_chg")
     if nas_chg is not None:
         if nas_chg >= 0.5:
@@ -387,6 +414,7 @@ def compute_market_score(overview: dict):
             score -= 1
             details.append(f"나스닥 선물 {nas_chg:.2f}% (하락)")
 
+    # 10년물 금리
     us10y = rf.get("us10y")
     if us10y is not None:
         if us10y < 4.0:
@@ -402,6 +430,7 @@ def compute_market_score(overview: dict):
             score -= 1
             details.append(f"10년물 {us10y:.2f}% (다소 부담)")
 
+    # 달러 인덱스
     dxy = rf.get("dxy")
     if dxy is not None:
         if dxy < 104:
@@ -411,30 +440,33 @@ def compute_market_score(overview: dict):
             score -= 1
             details.append(f"DXY {dxy:.2f} (달러 강세 → Risk-off 경계)")
 
+    # 빅테크/ETF
     for bt in bigtech:
-        chg = bt.get("pre_chg_pct")
+        chg = bt.get("chg_pct")
         sym = bt.get("symbol")
         if chg is None:
             continue
         if chg >= 1.0:
             score += 1
-            details.append(f"{sym} 프리/정규 +{chg:.2f}% (빅테크 강세)")
+            details.append(f"{sym} +{chg:.2f}% (강세)")
         elif chg <= -1.0:
             score -= 1
-            details.append(f"{sym} 프리/정규 {chg:.2f}% (빅테크 약세)")
+            details.append(f"{sym} {chg:.2f}% (약세)")
 
-    if score >= 4:
-        label = "강한 Risk-on (상승 우위 장세)"
-    elif score >= 1:
-        label = "약한 Risk-on ~ 중립 (무난한 장세)"
-    elif score <= -4:
-        label = "강한 Risk-off (하락/변동성 우위 장세)"
+    if score >= 5:
+        label = "🚀 강한 Risk-on (상승장 상단 구간)"
+    elif score >= 2:
+        label = "😊 약한 Risk-on ~ 우상향 기대"
+    elif score >= -1:
+        label = "😐 중립/혼조 (방향 모호)"
+    elif score >= -4:
+        label = "⚠ 약한 Risk-off (조정/변동성 주의)"
     else:
-        label = "약한 Risk-off ~ 중립 (조심스러운 장세)"
+        label = "🧨 강한 Risk-off (공포장 가능성)"
 
     detail_text = " · ".join(details)
     return score, label, detail_text
-# ===== 미국 시장 실시간 흐름 관련 추가 끝 =====
+# ===== 미국 시장 실시간 흐름 관련 끝 =====
 
 
 # -------------------------------
@@ -1018,76 +1050,82 @@ def main():
         st.write("단타 · 스윙 · 장기 + FGI + 기술적 지표 기반으로 매수/매도/물타기/신규진입 구간을 정리해줍니다.")
         st.caption("※ 종목 입력은 영어 티커가 가장 정확합니다. 한글 이름은 일부 인기 종목만 자동 인식됩니다.")
 
-        # ===== 여기: 미국 시장 실시간 흐름 박스 추가 =====
-        st.subheader("🌍 미국 시장 실시간 흐름 (선물 · 금리 · 달러 · 빅테크)")
+        # ---- 미국 시장 실시간 흐름: 보조지표용 박스 ----
+        with st.expander("🌍 미국 시장 실시간 흐름 (보조지표)", expanded=True):
+            st.caption("선물 · 금리 · 달러 · 빅테크/ETF (프리·애프터·정규 반영) 요약")
 
-        with st.spinner("미국 선물 · 금리 · 달러 · 빅테크 상황 불러오는 중..."):
-            overview = get_us_market_overview()
-        score, label, detail_text = compute_market_score(overview)
+            with st.spinner("미국 선물 · 금리 · 달러 · 빅테크/ETF 상황 불러오는 중..."):
+                overview = get_us_market_overview()
+            score, label, detail_text = compute_market_score(overview)
 
-        fut = overview.get("futures", {}) if overview else {}
-        rf = overview.get("rates_fx", {}) if overview else {}
-        bt = overview.get("bigtech", []) if overview else []
+            fut = overview.get("futures", {}) if overview else {}
+            rf = overview.get("rates_fx", {}) if overview else {}
+            bt_list = overview.get("bigtech", []) if overview else []
 
-        col_m1, col_m2, col_m3 = st.columns(3)
-        with col_m1:
-            nq_last = fut.get("nasdaq_last")
-            nq_chg = fut.get("nasdaq_chg")
-            if nq_last is not None and nq_chg is not None:
-                st.metric("나스닥 선물 (NQ=F)", f"{nq_last:.1f}", f"{nq_chg:.2f}%")
-            else:
-                st.metric("나스닥 선물 (NQ=F)", "N/A", "-")
+            col_m1, col_m2, col_m3 = st.columns(3)
+            with col_m1:
+                nq_last = fut.get("nasdaq_last")
+                nq_chg = fut.get("nasdaq_chg")
+                if nq_last is not None and nq_chg is not None:
+                    st.metric("나스닥 선물 (NQ=F)", f"{nq_last:.1f}", f"{nq_chg:.2f}%")
+                else:
+                    st.metric("나스닥 선물 (NQ=F)", "N/A", "-")
 
-        with col_m2:
-            es_last = fut.get("sp_last")
-            es_chg = fut.get("sp_chg")
-            if es_last is not None and es_chg is not None:
-                st.metric("S&P500 선물 (ES=F)", f"{es_last:.1f}", f"{es_chg:.2f}%")
-            else:
-                st.metric("S&P500 선물 (ES=F)", "N/A", "-")
+            with col_m2:
+                es_last = fut.get("sp_last")
+                es_chg = fut.get("sp_chg")
+                if es_last is not None and es_chg is not None:
+                    st.metric("S&P500 선물 (ES=F)", f"{es_last:.1f}", f"{es_chg:.2f}%")
+                else:
+                    st.metric("S&P500 선물 (ES=F)", "N/A", "-")
 
-        with col_m3:
-            us10y = rf.get("us10y")
-            if us10y is not None:
-                st.metric("미 10년물 금리", f"{us10y:.2f}%", "")
-            else:
-                st.metric("미 10년물 금리", "N/A", "")
+            with col_m3:
+                us10y = rf.get("us10y")
+                if us10y is not None:
+                    st.metric("미 10년물 금리", f"{us10y:.2f}%", "")
+                else:
+                    st.metric("미 10년물 금리", "N/A", "")
 
-        col_m4, col_m5 = st.columns(2)
-        with col_m4:
-            dxy = rf.get("dxy")
-            dxy_chg = rf.get("dxy_chg")
-            if dxy is not None and dxy_chg is not None:
-                st.metric("달러 인덱스 (DXY)", f"{dxy:.2f}", f"{dxy_chg:.2f}%")
-            else:
-                st.metric("달러 인덱스 (DXY)", "N/A", "-")
+            col_m4, col_m5 = st.columns(2)
+            with col_m4:
+                dxy = rf.get("dxy")
+                dxy_chg = rf.get("dxy_chg")
+                if dxy is not None and dxy_chg is not None:
+                    st.metric("달러 인덱스 (DXY)", f"{dxy:.2f}", f"{dxy_chg:.2f}%")
+                else:
+                    st.metric("달러 인덱스 (DXY)", "N/A", "-")
 
-        with col_m5:
-            st.metric("시장 종합 점수", f"{score}", label)
+            with col_m5:
+                max_score = 8
+                min_score = -7
+                st.metric("시장 종합 점수", f"{score} / {max_score}", label)
+                st.caption(f"(이론 범위: {min_score} ~ {max_score})")
 
-        if detail_text:
-            st.caption("· " + detail_text)
+            if detail_text:
+                st.caption("· " + detail_text)
 
-        if bt:
-            st.markdown("**빅테크 프리/정규 흐름 (참고)**")
-            cols_bt = st.columns(len(bt))
-            for idx, info in enumerate(bt):
-                with cols_bt[idx]:
-                    sym = info.get("symbol")
-                    nm = info.get("name")
-                    pre = info.get("pre")
-                    regular = info.get("regular")
-                    chg = info.get("pre_chg_pct")
-                    title = f"{nm} ({sym})"
-                    if pre is not None:
-                        val_str = f"프리: {pre:.2f}"
-                    elif regular is not None:
-                        val_str = f"정규: {regular:.2f}"
-                    else:
-                        val_str = "N/A"
-                    delta = f"{chg:.2f}%" if chg is not None else "-"
-                    st.metric(title, val_str, delta)
-        # ===== 미국 시장 실시간 흐름 박스 끝 =====
+            if bt_list:
+                st.markdown("---")
+                st.caption("빅테크/ETF 흐름 (PRE면 프리장, POST면 애프터장 기준)")
+                cols_bt = st.columns(len(bt_list))
+                for idx, info in enumerate(bt_list):
+                    with cols_bt[idx]:
+                        sym = info.get("symbol")
+                        nm = info.get("name")
+                        current = info.get("current")
+                        basis = info.get("basis")
+                        chg = info.get("chg_pct")
+
+                        title = f"{nm} ({sym})"
+                        if current is not None:
+                            val_str = f"{current:.2f} ({basis})"
+                        else:
+                            val_str = "N/A"
+
+                        delta = f"{chg:.2f}%" if chg is not None else "-"
+                        st.metric(title, val_str, delta)
+
+        st.markdown("---")  # 보조지표와 본 분석 섹션 시각적 분리
 
         col1, col2 = st.columns(2)
         with col1:
@@ -1227,7 +1265,6 @@ def main():
             st.caption("※ 신규 진입은 한 번에 몰입하기보다, 1차·2차로 나누어 분할 매수하는 것을 전제로 한 가이드입니다.")
 
         st.subheader("📊 지표 상태 (마지막 일봉 기준)")
-
         rsi = float(last["RSI14"])
         k = float(last["STOCH_K"])
         d = float(last["STOCH_D"])
