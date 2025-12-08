@@ -278,6 +278,165 @@ def get_last_extended_price(symbol: str):
         return None
 
 
+# ===== 미국 시장 실시간 흐름 관련 추가 =====
+@st.cache_data(ttl=60)
+def get_us_market_overview():
+    """
+    미국 지수 선물 / 금리 / 달러 / 빅테크(엔비디아, 애플, 마소) 프리/정규 정보를 묶어서 반환
+    """
+    overview = {}
+
+    def safe_last_change(ticker_str, period="1d", interval="1m"):
+        try:
+            t = yf.Ticker(ticker_str)
+            df = t.history(period=period, interval=interval, prepost=True)
+            if df.empty:
+                return None, None
+            close = df["Close"]
+            last = float(close.iloc[-1])
+            if len(close) >= 2:
+                prev = float(close.iloc[-2])
+                chg_pct = (last - prev) / prev * 100 if prev != 0 else 0.0
+            else:
+                chg_pct = None
+            return last, chg_pct
+        except Exception:
+            return None, None
+
+    # 나스닥 / S&P 선물
+    nq_last, nq_chg = safe_last_change("NQ=F")
+    es_last, es_chg = safe_last_change("ES=F")
+
+    # 10년물 금리 (^TNX: 1/10 단위)
+    tnx_last, tnx_chg = safe_last_change("^TNX")
+    if tnx_last is not None:
+        tnx_last = tnx_last / 10.0
+        if tnx_chg is not None:
+            tnx_chg = tnx_chg / 10.0
+
+    # 달러 인덱스
+    dxy_last, dxy_chg = safe_last_change("DX-Y.NYB")
+
+    overview["futures"] = {
+        "nasdaq_last": nq_last,
+        "nasdaq_chg": nq_chg,
+        "sp_last": es_last,
+        "sp_chg": es_chg,
+    }
+    overview["rates_fx"] = {
+        "us10y": tnx_last,
+        "us10y_chg": tnx_chg,
+        "dxy": dxy_last,
+        "dxy_chg": dxy_chg,
+    }
+
+    # 빅테크 프리마켓 (NVDA / AAPL / MSFT)
+    bigtech = []
+    for sym, kor_name in [("NVDA", "엔비디아"), ("AAPL", "애플"), ("MSFT", "마이크로소프트")]:
+        try:
+            info = yf.Ticker(sym).info
+            regular = info.get("regularMarketPrice")
+            prev_close = info.get("regularMarketPreviousClose")
+            pre = info.get("preMarketPrice")
+            # 프리마켓 변동률: 프리마켓 기준
+            pre_chg_pct = None
+            if pre is not None and prev_close:
+                pre_chg_pct = (pre - prev_close) / prev_close * 100
+            elif regular is not None and prev_close:
+                pre_chg_pct = (regular - prev_close) / prev_close * 100
+
+            bigtech.append(
+                {
+                    "symbol": sym,
+                    "name": kor_name,
+                    "regular": regular,
+                    "pre": pre,
+                    "pre_chg_pct": pre_chg_pct,
+                }
+            )
+        except Exception:
+            continue
+
+    overview["bigtech"] = bigtech
+    return overview
+
+
+def compute_market_score(overview: dict):
+    """
+    선물 + 금리 + 달러 + 빅테크 프리 변동률을 종합해서 점수/코멘트 리턴
+    """
+    if not overview:
+        return 0, "데이터 부족", "실시간 시장 데이터를 불러오지 못했습니다."
+
+    fut = overview.get("futures", {})
+    rf = overview.get("rates_fx", {})
+    bigtech = overview.get("bigtech", [])
+
+    score = 0
+    details = []
+
+    nas_chg = fut.get("nasdaq_chg")
+    if nas_chg is not None:
+        if nas_chg >= 0.5:
+            score += 2
+            details.append(f"나스닥 선물 +{nas_chg:.2f}% (강한 상승)")
+        elif nas_chg >= 0:
+            score += 1
+            details.append(f"나스닥 선물 +{nas_chg:.2f}% (약한 상승)")
+        else:
+            score -= 1
+            details.append(f"나스닥 선물 {nas_chg:.2f}% (하락)")
+
+    us10y = rf.get("us10y")
+    if us10y is not None:
+        if us10y < 4.0:
+            score += 2
+            details.append(f"10년물 {us10y:.2f}% (금리 우호)")
+        elif us10y < 4.2:
+            score += 1
+            details.append(f"10년물 {us10y:.2f}% (무난)")
+        elif us10y > 4.4:
+            score -= 2
+            details.append(f"10년물 {us10y:.2f}% (금리 부담)")
+        else:
+            score -= 1
+            details.append(f"10년물 {us10y:.2f}% (다소 부담)")
+
+    dxy = rf.get("dxy")
+    if dxy is not None:
+        if dxy < 104:
+            score += 1
+            details.append(f"DXY {dxy:.2f} (달러 약세 → Risk-on 우호)")
+        elif dxy > 106:
+            score -= 1
+            details.append(f"DXY {dxy:.2f} (달러 강세 → Risk-off 경계)")
+
+    for bt in bigtech:
+        chg = bt.get("pre_chg_pct")
+        sym = bt.get("symbol")
+        if chg is None:
+            continue
+        if chg >= 1.0:
+            score += 1
+            details.append(f"{sym} 프리/정규 +{chg:.2f}% (빅테크 강세)")
+        elif chg <= -1.0:
+            score -= 1
+            details.append(f"{sym} 프리/정규 {chg:.2f}% (빅테크 약세)")
+
+    if score >= 4:
+        label = "강한 Risk-on (상승 우위 장세)"
+    elif score >= 1:
+        label = "약한 Risk-on ~ 중립 (무난한 장세)"
+    elif score <= -4:
+        label = "강한 Risk-off (하락/변동성 우위 장세)"
+    else:
+        label = "약한 Risk-off ~ 중립 (조심스러운 장세)"
+
+    detail_text = " · ".join(details)
+    return score, label, detail_text
+# ===== 미국 시장 실시간 흐름 관련 추가 끝 =====
+
+
 # -------------------------------
 # 모드별 설정
 # -------------------------------
@@ -859,6 +1018,77 @@ def main():
         st.write("단타 · 스윙 · 장기 + FGI + 기술적 지표 기반으로 매수/매도/물타기/신규진입 구간을 정리해줍니다.")
         st.caption("※ 종목 입력은 영어 티커가 가장 정확합니다. 한글 이름은 일부 인기 종목만 자동 인식됩니다.")
 
+        # ===== 여기: 미국 시장 실시간 흐름 박스 추가 =====
+        st.subheader("🌍 미국 시장 실시간 흐름 (선물 · 금리 · 달러 · 빅테크)")
+
+        with st.spinner("미국 선물 · 금리 · 달러 · 빅테크 상황 불러오는 중..."):
+            overview = get_us_market_overview()
+        score, label, detail_text = compute_market_score(overview)
+
+        fut = overview.get("futures", {}) if overview else {}
+        rf = overview.get("rates_fx", {}) if overview else {}
+        bt = overview.get("bigtech", []) if overview else []
+
+        col_m1, col_m2, col_m3 = st.columns(3)
+        with col_m1:
+            nq_last = fut.get("nasdaq_last")
+            nq_chg = fut.get("nasdaq_chg")
+            if nq_last is not None and nq_chg is not None:
+                st.metric("나스닥 선물 (NQ=F)", f"{nq_last:.1f}", f"{nq_chg:.2f}%")
+            else:
+                st.metric("나스닥 선물 (NQ=F)", "N/A", "-")
+
+        with col_m2:
+            es_last = fut.get("sp_last")
+            es_chg = fut.get("sp_chg")
+            if es_last is not None and es_chg is not None:
+                st.metric("S&P500 선물 (ES=F)", f"{es_last:.1f}", f"{es_chg:.2f}%")
+            else:
+                st.metric("S&P500 선물 (ES=F)", "N/A", "-")
+
+        with col_m3:
+            us10y = rf.get("us10y")
+            if us10y is not None:
+                st.metric("미 10년물 금리", f"{us10y:.2f}%", "")
+            else:
+                st.metric("미 10년물 금리", "N/A", "")
+
+        col_m4, col_m5 = st.columns(2)
+        with col_m4:
+            dxy = rf.get("dxy")
+            dxy_chg = rf.get("dxy_chg")
+            if dxy is not None and dxy_chg is not None:
+                st.metric("달러 인덱스 (DXY)", f"{dxy:.2f}", f"{dxy_chg:.2f}%")
+            else:
+                st.metric("달러 인덱스 (DXY)", "N/A", "-")
+
+        with col_m5:
+            st.metric("시장 종합 점수", f"{score}", label)
+
+        if detail_text:
+            st.caption("· " + detail_text)
+
+        if bt:
+            st.markdown("**빅테크 프리/정규 흐름 (참고)**")
+            cols_bt = st.columns(len(bt))
+            for idx, info in enumerate(bt):
+                with cols_bt[idx]:
+                    sym = info.get("symbol")
+                    nm = info.get("name")
+                    pre = info.get("pre")
+                    regular = info.get("regular")
+                    chg = info.get("pre_chg_pct")
+                    title = f"{nm} ({sym})"
+                    if pre is not None:
+                        val_str = f"프리: {pre:.2f}"
+                    elif regular is not None:
+                        val_str = f"정규: {regular:.2f}"
+                    else:
+                        val_str = "N/A"
+                    delta = f"{chg:.2f}%" if chg is not None else "-"
+                    st.metric(title, val_str, delta)
+        # ===== 미국 시장 실시간 흐름 박스 끝 =====
+
         col1, col2 = st.columns(2)
         with col1:
             user_symbol = st.text_input(
@@ -997,6 +1227,7 @@ def main():
             st.caption("※ 신규 진입은 한 번에 몰입하기보다, 1차·2차로 나누어 분할 매수하는 것을 전제로 한 가이드입니다.")
 
         st.subheader("📊 지표 상태 (마지막 일봉 기준)")
+
         rsi = float(last["RSI14"])
         k = float(last["STOCH_K"])
         d = float(last["STOCH_D"])
