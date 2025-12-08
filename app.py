@@ -98,7 +98,7 @@ def normalize_symbol(user_input: str) -> str:
 
 
 # -------------------------------
-# FGI (CNN Fear & Greed Index)
+# FGI (CNN Fear & Greed Index) - 개별 종목 분석용 (시장개요에서는 표기 안 함)
 # -------------------------------
 def fetch_fgi():
     url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
@@ -175,10 +175,10 @@ def safe_last_change_info(ticker_str: str):
 def get_etf_price_with_prepost(symbol: str, name: str):
     """
     QQQ / VOO / SOXX 에 대해
-    - PRE 이면 preMarketPrice
-    - POST 이면 postMarketPrice
-    - 나머지는 regularMarketPrice
-    를 현재가로 사용하고, 전일 종가 대비 % 계산.
+    - PRE 이면 preMarketPrice + preMarketChangePercent
+    - POST 이면 postMarketPrice + postMarketChangePercent
+    - 나머지는 regularMarketPrice + regularMarketChangePercent
+    를 사용. 퍼센트는 야후와 최대한 동일하게 맞춤.
     """
     try:
         t = yf.Ticker(symbol)
@@ -191,22 +191,34 @@ def get_etf_price_with_prepost(symbol: str, name: str):
         post = info.get("postMarketPrice")
         regular = info.get("regularMarketPrice")
 
+        current = None
+        chg_pct = None
+        basis = "기준 불명"
+
         if market_state == "PRE" and pre is not None:
             current = pre
             basis = "프리장 기준"
+            chg_pct = info.get("preMarketChangePercent")
+            if chg_pct is None and prev_close not in (None, 0, 0.0):
+                chg_pct = (pre - prev_close) / prev_close * 100
+
         elif market_state == "POST" and post is not None:
             current = post
             basis = "애프터장 기준"
+            chg_pct = info.get("postMarketChangePercent")
+            if chg_pct is None and prev_close not in (None, 0, 0.0):
+                chg_pct = (post - prev_close) / prev_close * 100
+
         elif regular is not None:
             current = regular
             basis = "정규장 기준"
-        else:
-            current = pre or post or regular
-            basis = "기준 불명"
+            chg_pct = info.get("regularMarketChangePercent")
+            if chg_pct is None and prev_close not in (None, 0, 0.0):
+                chg_pct = (regular - prev_close) / prev_close * 100
 
-        chg_pct = None
-        if current is not None and prev_close not in (None, 0, 0.0):
-            chg_pct = (current - prev_close) / prev_close * 100
+        # 그래도 current가 없으면 마지막 수치 하나라도 사용
+        if current is None:
+            current = pre or post or regular
 
         return {
             "symbol": symbol,
@@ -232,7 +244,7 @@ def get_us_market_overview():
     """
     미국 지수선물, 금리, 달러, ETF(QQQ/VOO/SOXX), FGI 를 한 번에 묶어서 반환
     - 선물/금리/DXY: 전일 종가 대비 %
-    - ETF: 프리/정규/애프터 자동 선택 + 전일 종가 대비 %
+    - ETF: PRE/POST/REGULAR 별 changePercent 우선 사용
     """
     overview = {}
 
@@ -281,7 +293,7 @@ def get_us_market_overview():
 
     overview["etfs"] = etfs
 
-    # FGI
+    # FGI (시장개요에서는 안 쓰고, 개별 종목 분석용으로만 넘길 수 있게 유지)
     overview["fgi"] = fetch_fgi()
 
     return overview
@@ -704,7 +716,6 @@ def main():
         fut = ov.get("futures", {})
         rf = ov.get("rates_fx", {})
         etfs = ov.get("etfs", [])
-        fgi_overview = ov.get("fgi")
 
         col1, col2, col3 = st.columns(3)
 
@@ -714,13 +725,13 @@ def main():
             last = nas.get("last")
             chg = nas.get("chg_pct")
             state = nas.get("state", "")
-            title = "NQ=F"
-            if state:
-                title += f" [{state}]"
+            title = "나스닥 선물"
             if last is not None and chg is not None:
                 st.metric(title, f"{last:.1f}", f"{chg:.2f}%")
             else:
                 st.metric(title, "N/A", "-")
+            if state:
+                st.caption(f"상태: {state}")
 
         # S&P 선물
         es = fut.get("sp500", {})
@@ -728,13 +739,13 @@ def main():
             last = es.get("last")
             chg = es.get("chg_pct")
             state = es.get("state", "")
-            title = "ES=F"
-            if state:
-                title += f" [{state}]"
+            title = "S&P500 선물"
             if last is not None and chg is not None:
                 st.metric(title, f"{last:.1f}", f"{chg:.2f}%")
             else:
                 st.metric(title, "N/A", "-")
+            if state:
+                st.caption(f"상태: {state}")
 
         # 시장 종합 점수
         with col3:
@@ -765,21 +776,14 @@ def main():
             dxy = rf.get("dxy")
             dxy_chg = rf.get("dxy_chg")
             if dxy is not None and dxy_chg is not None:
-                st.metric("DXY", f"{dxy:.2f}", f"{dxy_chg:.2f}%")
+                st.metric("달러 인덱스 (DXY)", f"{dxy:.2f}", f"{dxy_chg:.2f}%")
             else:
-                st.metric("DXY", "N/A", "-")
+                st.metric("달러 인덱스 (DXY)", "N/A", "-")
 
-        # FGI
+        # 오른쪽 칸은 안내 문구 정도만
         with col6:
-            if fgi_overview is not None:
-                st.metric("FGI", f"{fgi_overview:.1f}", "")
-                if fgi_overview <= 25:
-                    st.caption("극단적 공포")
-                elif fgi_overview >= 75:
-                    st.caption("극단적 탐욕")
-            else:
-                st.metric("FGI", "N/A", "")
-                st.caption("CNN FGI 조회 실패")
+            st.write("")
+            st.caption("※ 지수·선물·금리·달러 수치는 약간의 지연이 있을 수 있습니다.")
 
         st.markdown("---")
 
@@ -796,10 +800,8 @@ def main():
                     chg = e.get("chg_pct")
                     state = e.get("market_state", "")
 
-                    # 제목: 심플하게 티커 + 상태만
+                    # 제목: 심플하게 티커
                     title = sym
-                    if state:
-                        title += f" [{state}]"
 
                     # 값: 숫자만 (길이 줄이기)
                     if current is not None:
@@ -810,8 +812,11 @@ def main():
                     delta = f"{chg:.2f}%" if chg is not None else "-"
 
                     st.metric(title, value_str, delta)
-                    # 아래에 작은 글씨로 풀네임 + 기준
-                    st.caption(f"{name} · {basis}")
+                    # 아래에 작은 글씨로 풀네임 + 기준 + 상태
+                    extra = basis
+                    if state:
+                        extra += f" · 상태: {state}"
+                    st.caption(f"{name} · {extra}")
 
             st.caption("※ %는 항상 전일 종가 대비 기준입니다.")
         else:
