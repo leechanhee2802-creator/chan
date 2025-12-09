@@ -5,7 +5,7 @@ import numpy as np
 import requests
 
 # =====================================
-# 페이지 설정 + 전체 테마 (참고 이미지 느낌)
+# 페이지 설정 + 전체 테마
 # =====================================
 st.set_page_config(
     page_title="내 주식 자동판독기 (시장 개요 + 실전 보조지표)",
@@ -13,22 +13,24 @@ st.set_page_config(
     layout="wide",
 )
 
-# 대시보드 스타일 CSS
+# 대시보드 스타일 CSS (배경 더 푸르게, 글자 거의 전부 흰색 계열)
 st.markdown(
     """
 <style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
 /* 전체 폰트 + 배경 */
 * {
-    font-family: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+    font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 }
+
 [data-testid="stAppViewContainer"] {
-    background: #111827;  /* 진한 남색 회색 */
+    background: radial-gradient(circle at top left, #1d2a4d 0, #0b1530 40%, #020617 100%);
     color: #e5e7eb;
 }
 
-/* 메인 컨테이너 패딩 */
 main.block-container {
-    padding-top: 1.5rem;
+    padding-top: 1.3rem;
     padding-bottom: 2rem;
     max-width: 1350px;
 }
@@ -39,12 +41,34 @@ main.block-container {
     color: #e5e7eb;
 }
 
-/* 헤더류 */
-h1, h2, h3, h4 {
+/* 헤더 사이즈/색 (촌스럽지 않게 축소) */
+h1 {
+    color: #f9fafb !important;
+    font-size: 1.6rem !important;
+    font-weight: 600 !important;
+}
+h2 {
+    color: #f9fafb !important;
+    font-size: 1.25rem !important;
+    font-weight: 600 !important;
+}
+h3 {
+    color: #f3f4f6 !important;
+    font-size: 1.05rem !important;
+    font-weight: 600 !important;
+}
+h4 {
+    color: #e5e7eb !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+}
+
+/* 모든 label / 캡션 흰색 계열로 */
+label, .stRadio, .stSelectbox, .stNumberInput, .stTextInput, .stMetricLabel, .stMarkdown, .stCaption {
     color: #e5e7eb !important;
 }
 
-/* 구분선: 밝은 색으로 눈에 잘 띄게 */
+/* 구분선 */
 hr {
     margin-top: 1rem;
     margin-bottom: 1rem;
@@ -52,38 +76,38 @@ hr {
     border-top: 1px solid #4b5563;
 }
 
-/* 공통 카드 박스 (참고 이미지의 큰 카드 느낌) */
+/* 공통 카드 박스 */
 .card {
-    background: #1f2937;
+    background: rgba(15,23,42,0.95);
     border-radius: 16px;
     padding: 14px 18px;
     border: 1px solid #374151;
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
 }
 
 .card-title {
     font-size: 0.78rem;
-    color: #9ca3af;
+    color: #cbd5f5;
     margin-bottom: 6px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
 
 .card-value {
-    font-size: 1.5rem;
+    font-size: 1.4rem;
     font-weight: 600;
     color: #f9fafb;
     margin-bottom: 4px;
 }
 
 .card-sub {
-    font-size: 0.85rem;
-    color: #cbd5f5;
+    font-size: 0.86rem;
+    color: #e5e7eb;
 }
 
-/* 작은 카드 (측면, 보조 텍스트용) */
+/* 작은 카드 */
 .card-small {
-    background: #1f2937;
+    background: rgba(15,23,42,0.96);
     border-radius: 14px;
     padding: 10px 12px;
     border: 1px solid #374151;
@@ -93,55 +117,65 @@ hr {
 details {
     border-radius: 16px !important;
     border: 1px solid #374151 !important;
-    background-color: #1f2937 !important;
-    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+    background-color: rgba(15,23,42,0.96) !important;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
 }
 
-/* metric 카드 스타일 (배경/테두리 통일) */
+/* metric 카드 스타일 (나스닥/ETF 숫자 포함) */
 [data-testid="metric-container"] {
-    background-color: #1f2937;
+    background-color: rgba(15,23,42,0.96);
     border-radius: 14px;
     padding: 10px 14px;
-    border: 1px solid #374151;
-    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+    border: 1px solid #4b5563;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.45);
 }
 
 /* metric 라벨 */
 [data-testid="metric-container"] > div:nth-child(1) {
-    font-size: 0.78rem;
-    color: #9ca3af;
+    font-size: 0.8rem;
+    color: #e5e7eb;
 }
 
-/* metric 값 */
+/* metric 값 (숫자) → 완전 흰색 */
 [data-testid="metric-container"] > div:nth-child(2) {
     font-size: 1.1rem;
     font-weight: 600;
-    color: #f9fafb;
+    color: #ffffff;
 }
 
-/* metric 델타 */
+/* metric 델타 (변동률) → 밝은 하늘색 */
 [data-testid="metric-container"] > div:nth-child(3) {
-    font-size: 0.86rem;
-    color: #a5b4fc;
+    font-size: 0.9rem;
+    color: #7dd3fc;
 }
 
-/* 버튼 */
+/* 버튼 (즐겨찾기/최근 포함) */
 .stButton>button {
     border-radius: 999px;
     padding: 6px 18px;
     font-size: 0.9rem;
     border: 1px solid #4b5563;
-    background: #1f2937;
-    color: #e5e7eb;
+    background: rgba(15,23,42,0.96);
+    color: #f9fafb;
 }
 .stButton>button:hover {
-    border-color: #3b82f6;
-    background: #111827;
+    border-color: #38bdf8;
+    background: #020617;
 }
 
 /* 입력 박스 */
 [data-baseweb="input"] {
     border-radius: 999px !important;
+}
+
+/* 입력박스 안 placeholder 색 */
+input::placeholder {
+    color: #9ca3af !important;
+}
+
+/* 라디오/셀렉트 텍스트 */
+[data-baseweb="radio"] label, [data-baseweb="select"] * {
+    color: #e5e7eb !important;
 }
 
 /* 탭 헤더 */
@@ -154,12 +188,15 @@ details {
     border-radius: 999px !important;
 }
 
-/* 표 배경 */
+/* 표/데이터프레임 배경 */
 [data-testid="stDataFrame"] {
-    background-color: #111827;
+    background-color: #020617;
+}
+[data-testid="stTable"] {
+    background-color: #020617;
 }
 
-/* 캡션 스타일 */
+/* 캡션 */
 .small-muted {
     font-size: 0.8rem;
     color: #cbd5f5;
@@ -171,14 +208,9 @@ details {
     text-align: left;
 }
 
-/* 데이터프레임 테이블 */
-[data-testid="stTable"] {
-    background-color: #111827;
-}
-
-/* placeholder 글자색 */
-input::placeholder {
-    color: #6b7280 !important;
+/* expander 안 텍스트도 선명하게 */
+details p, details span, details div {
+    color: #e5e7eb !important;
 }
 </style>
     """,
@@ -336,9 +368,6 @@ def safe_last_change_info(ticker_str: str):
 
 
 def get_etf_price_with_prepost(symbol: str, name: str):
-    """
-    QQQ / VOO / SOXX - PRE/POST/REGULAR별 changePercent 우선 사용
-    """
     try:
         t = yf.Ticker(symbol)
         info = t.info
@@ -436,7 +465,6 @@ def get_us_market_overview():
     ]
     overview["etfs"] = etfs
 
-    # FGI (개별 종목용)
     overview["fgi"] = fetch_fgi()
 
     return overview
@@ -453,7 +481,6 @@ def compute_market_score(overview: dict):
     score = 0
     details = []
 
-    # 나스닥 선물
     nas = fut.get("nasdaq", {})
     nas_chg = nas.get("chg_pct")
     if nas_chg is not None:
@@ -470,7 +497,6 @@ def compute_market_score(overview: dict):
             score -= 1
             details.append(f"나스닥 선물 {nas_chg:.2f}% (완만한 하락)")
 
-    # 10년물 금리
     us10y = rf.get("us10y")
     if us10y is not None:
         if us10y < 4.0:
@@ -486,7 +512,6 @@ def compute_market_score(overview: dict):
             score -= 1
             details.append(f"미 10년물 {us10y:.2f}% (다소 부담)")
 
-    # 달러 인덱스
     dxy = rf.get("dxy")
     if dxy is not None:
         if dxy < 104:
@@ -496,7 +521,6 @@ def compute_market_score(overview: dict):
             score -= 1
             details.append(f"DXY {dxy:.2f} (달러 강세 → Risk-off 경계)")
 
-    # ETF 3종
     for e in etfs:
         sym = e.get("symbol")
         chg = e.get("chg_pct")
@@ -850,10 +874,6 @@ def calc_gap_info(df: pd.DataFrame):
 
 
 def calc_technical_tp_sl(df: pd.DataFrame):
-    """
-    손익비 계산용 '기술적' TP/SL
-    - 모드 퍼센트(cfg) 영향 X
-    """
     recent = df.tail(20)
     if len(recent) < 5:
         return None, None
