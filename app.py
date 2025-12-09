@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# 대시보드 스타일 CSS – 모든 텍스트를 기본적으로 밝게 강제
+# 대시보드 스타일 CSS
 st.markdown(
     """
 <style>
@@ -24,25 +24,38 @@ st.markdown(
     font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 }
 
-/* 기본 텍스트 색을 전체적으로 밝게 강제 */
-html, body, [data-testid="stAppViewContainer"] * {
+/* 기본 텍스트 색: metric 변동률(stMetricDelta)만 예외로 두고 모두 밝게 */
+html, body, [data-testid="stAppViewContainer"] *:not([data-testid="stMetricDelta"]) {
     color: #e5e7eb !important;
 }
 
-/* 배경 */
+/* 전체 배경 */
 [data-testid="stAppViewContainer"] {
     background: radial-gradient(circle at top left, #1d2a4d 0, #0b1530 40%, #020617 100%);
 }
 
+/* 메인 컨테이너 배경 */
 main.block-container {
     padding-top: 1.3rem;
     padding-bottom: 2rem;
     max-width: 1350px;
+    background-color: transparent;
+}
+
+/* 헤더 영역도 어둡게 */
+header, [data-testid="stHeader"] {
+    background-color: #020617 !important;
 }
 
 /* 사이드바 */
 [data-testid="stSidebar"] {
-    background-color: #020617;
+    background-color: #020617 !important;
+}
+
+/* 모든 카드/탭 패널 배경 어둡게 */
+[data-baseweb="tab-panel"],
+section, article {
+    background-color: transparent !important;
 }
 
 /* 헤더 사이즈/색 */
@@ -117,7 +130,7 @@ details {
     box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
 }
 
-/* metric 카드 – 여기 안 숫자/텍스트도 모두 밝게 */
+/* metric 카드 – 배경만 어둡게, 값/라벨은 밝게, delta는 기본(red/green) 그대로 */
 [data-testid="metric-container"] {
     background-color: rgba(15,23,42,0.96);
     border-radius: 14px;
@@ -125,14 +138,13 @@ details {
     border: 1px solid #4b5563;
     box-shadow: 0 6px 12px rgba(0, 0, 0, 0.45);
 }
-[data-testid="metric-container"] * {
+[data-testid="stMetricLabel"] {
+    color: #cbd5f5 !important;
+}
+[data-testid="stMetricValue"] {
     color: #f9fafb !important;
 }
-/* delta(변동률)는 하늘색으로 강조 */
-[data-testid="metric-container"] > div:nth-child(3),
-[data-testid="metric-container"] span[data-testid="stMetricDelta"] {
-    color: #7dd3fc !important;
-}
+/* delta(stMetricDelta)는 색을 건드리지 않는다 → Streamlit 기본 초록/빨강 사용 */
 
 /* 버튼 (즐겨찾기/최근 포함) */
 .stButton>button {
@@ -148,22 +160,29 @@ details {
     background: #020617;
 }
 
-/* 입력 박스 */
-[data-baseweb="input"] {
+/* 입력 박스 – 배경을 전부 어둡게 */
+[data-baseweb="input"] > div {
+    background-color: #020617 !important;
     border-radius: 999px !important;
 }
-/* 입력 텍스트/placeholder */
-input, textarea {
+[data-baseweb="input"] input {
+    background-color: transparent !important;
     color: #f9fafb !important;
 }
-input::placeholder {
+textarea {
+    background-color: #020617 !important;
+    color: #f9fafb !important;
+}
+input::placeholder, textarea::placeholder {
     color: #9ca3af !important;
 }
 
-/* 라디오/셀렉트 내부 텍스트 */
-[data-baseweb="radio"] * ,
-[data-baseweb="select"] * {
-    color: #e5e7eb !important;
+/* selectbox / radio 도 배경 어둡게 */
+[data-baseweb="select"] > div {
+    background-color: #020617 !important;
+}
+[data-baseweb="radio"] > label {
+    background-color: transparent !important;
 }
 
 /* 탭 헤더 */
