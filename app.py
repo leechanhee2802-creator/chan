@@ -5,7 +5,7 @@ import numpy as np
 import requests
 
 # =====================================
-# 페이지 설정 + 기본 스타일 (다크 대시보드 느낌)
+# 페이지 설정 + 기본 스타일 (4번 이미지 느낌, 밝은 다크모드)
 # =====================================
 st.set_page_config(
     page_title="내 주식 자동판독기 (시장 개요 + 실전 보조지표)",
@@ -17,30 +17,37 @@ st.set_page_config(
 st.markdown(
     """
 <style>
-/* 전체 배경 */
+/* 전체 배경: 너무 까맣지 않은 남색 톤 */
 [data-testid="stAppViewContainer"] {
-    background: radial-gradient(circle at top left, #1f2937 0, #020617 45%, #020617 100%);
+    background: #020617;
     color: #e5e7eb;
+}
+
+/* 메인 컨테이너 넓게 & 가운데 정렬 느낌 */
+main.block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
 }
 
 /* 사이드바 배경 */
 [data-testid="stSidebar"] {
     background-color: #020617;
+    color: #e5e7eb;
 }
 
-/* 제목 폰트 */
+/* 제목/헤더 컬러 */
 h1, h2, h3, h4 {
     color: #e5e7eb !important;
 }
 
-/* expander 카드 스타일 */
+/* expander 카드 스타일 (조금 밝은 카드 배경) */
 details {
-    border-radius: 12px !important;
-    border: 1px solid #1f2937 !important;
+    border-radius: 14px !important;
+    border: 1px solid #1e293b !important;
     background-color: #020617 !important;
 }
 
-/* metric 카드 폰트 크기 줄이기 */
+/* metric 카드 스타일: 테두리 + 살짝 밝은 배경 */
 [data-testid="metric-container"] {
     background-color: #020617;
     border-radius: 12px;
@@ -48,65 +55,84 @@ details {
     border: 1px solid #1f2937;
 }
 
+/* metric 제목(라벨) */
 [data-testid="metric-container"] > div:nth-child(1) {
     font-size: 0.8rem;
-    color: #9ca3af;
+    color: #cbd5f5;
 }
 
+/* metric 값 */
 [data-testid="metric-container"] > div:nth-child(2) {
-    font-size: 1.2rem;
+    font-size: 1.25rem;
     font-weight: 700;
+    color: #f9fafb;
 }
 
+/* metric 델타 */
 [data-testid="metric-container"] > div:nth-child(3) {
     font-size: 0.9rem;
+    color: #a5b4fc;
 }
 
-/* 구분선 여백 줄이기 */
+/* 구분선 여백 */
 hr {
     margin-top: 0.8rem;
     margin-bottom: 0.8rem;
     border-color: #111827;
 }
 
-/* 카테고리 카드용 박스 */
+/* 커스텀 카드 박스 (상단 정보 카드들) */
 .card {
-    background-color: #020617;
+    background: #020617;
     border-radius: 14px;
-    padding: 14px 16px;
-    border: 1px solid #1f2937;
+    padding: 12px 14px;
+    border: 1px solid #1e293b;
 }
 
 .card-title {
-    font-size: 0.9rem;
+    font-size: 0.75rem;
     color: #9ca3af;
     margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
 }
 
 .card-value {
     font-size: 1.2rem;
     font-weight: 600;
+    color: #e5e7eb;
     margin-bottom: 4px;
 }
 
 .card-sub {
     font-size: 0.8rem;
-    color: #6b7280;
+    color: #cbd5f5;
 }
 
-/* 버튼 스타일 약간 정리 */
+/* 버튼 스타일 */
 .stButton>button {
     border-radius: 999px;
-    padding: 4px 14px;
+    padding: 4px 16px;
     font-size: 0.85rem;
+    border: 1px solid #1f2937;
+    background: #020617;
+    color: #e5e7eb;
+}
+.stButton>button:hover {
+    border-color: #3b82f6;
 }
 
-/* 텍스트 입력 박스 */
+/* 입력 박스 라운드 + 테두리 */
 [data-baseweb="input"] {
     border-radius: 999px !important;
 }
 
-/* 탭 헤더 배경 */
+/* 라디오/셀렉트 라벨 색 */
+label {
+    color: #e5e7eb !important;
+}
+
+/* 탭 헤더 배경 (둥근 네비게이션) */
 [data-baseweb="tab-list"] {
     background-color: #020617;
     border-radius: 999px;
@@ -121,10 +147,26 @@ hr {
     background-color: #020617;
 }
 
-/* 캡션 컬러 */
+/* 캡션용 클래스를 조금 더 밝게 */
 .small-muted {
     font-size: 0.8rem;
-    color: #6b7280;
+    color: #cbd5f5;
+}
+
+/* 오른쪽 즐겨찾기/최근검색 버튼 영역 */
+.sidebar-button {
+    width: 100%;
+    text-align: left;
+}
+
+/* 데이터프레임 스크롤 영역 조금 어둡게 */
+[data-testid="stTable"] {
+    background-color: #020617;
+}
+
+/* 텍스트 입력 placeholder 글씨도 잘 보이게 */
+input::placeholder {
+    color: #6b7280 !important;
 }
 </style>
     """,
@@ -480,7 +522,6 @@ def get_price_data(symbol, period="6mo"):
         ticker = yf.Ticker(symbol)
         df = ticker.history(period=period, interval="1d", auto_adjust=False)
     except ValueError:
-        # yfinance Empty ticker name 방어
         return pd.DataFrame()
     if df.empty:
         return df
@@ -520,7 +561,6 @@ def add_indicators(df: pd.DataFrame):
 
     df["MA50"] = close.rolling(50).mean()
 
-    # ATR(14)
     tr1 = high - low
     tr2 = (high - close.shift(1)).abs()
     tr3 = (low - close.shift(1)).abs()
@@ -531,9 +571,6 @@ def add_indicators(df: pd.DataFrame):
 
 
 def get_intraday_5m(symbol: str):
-    """
-    5분봉 데이터 (최대 2일) - 장중 흐름 스코어용
-    """
     try:
         t = yf.Ticker(symbol)
         df = t.history(period="2d", interval="5m", auto_adjust=False, prepost=False)
@@ -576,7 +613,7 @@ def comment_stoch(k, d):
 def comment_macd(macd, signal):
     if macd > 0 and macd > signal:
         return "상승 모멘텀 우위"
-    elif macd < 0 and macd < signal:
+    elif macd < 0 and maccd < signal:
         return "하락 모멘텀 우위"
     elif macd > signal:
         return "골든크로스(상방 전환 시도)"
@@ -782,9 +819,6 @@ def calc_levels(df, last, avg_price, cfg):
 
 
 def calc_gap_info(df: pd.DataFrame):
-    """
-    전일 종가 대비 오늘 시가 갭 분석
-    """
     if len(df) < 2:
         return None, None
     prev_close = float(df["Close"].iloc[-2])
@@ -807,7 +841,6 @@ def calc_technical_tp_sl(df: pd.DataFrame):
     """
     손익비 계산용 '기술적' TP/SL
     - 모드 퍼센트(cfg) 영향 X
-    - 최근 고점/저점 + 볼밴 기준
     """
     recent = df.tail(20)
     if len(recent) < 5:
@@ -834,7 +867,6 @@ def calc_technical_tp_sl(df: pd.DataFrame):
     ]
     tech_sl = min(sl_candidates)
 
-    # 비정상 (TP가 현재가보다 낮거나 SL이 현재가보다 높은 경우) 방어
     if tech_tp <= price or tech_sl >= price:
         return None, None
 
@@ -977,7 +1009,7 @@ def build_risk_alerts(market_score, last_row, gap_pct, atr14, price_move_abs):
 
 
 # =====================================
-# 세션 상태 초기화 (최근검색 / 즐겨찾기 / 사이드 클릭)
+# 세션 상태 (즐겨찾기/최근검색/클릭플래그)
 # =====================================
 if "recent_symbols" not in st.session_state:
     st.session_state["recent_symbols"] = []
@@ -996,7 +1028,7 @@ if "symbol_input" not in st.session_state:
 
 
 # =====================================
-# 레이아웃: 메인(왼쪽) + 사이드(오른쪽)
+# 레이아웃: 메인(왼쪽) + 오른쪽(즐겨찾기/최근)
 # =====================================
 col_main, col_side = st.columns([3, 1])
 
@@ -1005,7 +1037,6 @@ with col_side:
     st.subheader("⭐ 즐겨찾기 & 최근 종목")
 
     tab_fav, tab_recent = st.tabs(["⭐ 즐겨찾기", "🕒 최근 검색"])
-
     clicked_symbol = None
 
     with tab_fav:
@@ -1016,7 +1047,6 @@ with col_side:
             for sym in favs:
                 label = sym
                 if sym in KOREAN_TICKER_MAP.values():
-                    # 역매핑 간단 버전
                     ko_names = [k for k, v in KOREAN_TICKER_MAP.items() if v == sym]
                     if ko_names:
                         label = f"{sym} ({ko_names[0]})"
@@ -1037,7 +1067,6 @@ with col_side:
                 if st.button(label, key=f"recent_{sym}"):
                     clicked_symbol = sym
 
-    # ✅ 사이드에서 종목 클릭 시: 입력창 값 & 선택 심볼 & 자동실행 플래그 모두 변경
     if clicked_symbol:
         st.session_state["selected_symbol"] = clicked_symbol
         st.session_state["symbol_input"] = clicked_symbol
@@ -1046,11 +1075,9 @@ with col_side:
 # ---- 왼쪽: 메인 ----
 with col_main:
     st.title("📈 내 주식 자동판독기")
-    st.caption("시장 개요 + 개별 종목 판독 + 손익비/갭/ATR/장중 흐름까지 한번에")
+    st.caption("시장 개요 + 개별 종목 판독 + 손익비/갭/ATR/장중 흐름까지 한 화면에서 확인")
 
-    # ==========================
     # 1) 미국 시장 개요
-    # ==========================
     with st.expander("🌍 미국 시장 실시간 흐름 (보조지표)", expanded=True):
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
@@ -1070,7 +1097,6 @@ with col_main:
         nas = fut.get("nasdaq", {})
         es = fut.get("sp500", {})
 
-        # 상단 3개 카드
         col1, col2, col3 = st.columns(3)
         with col1:
             last = nas.get("last")
@@ -1125,30 +1151,26 @@ with col_main:
             for i, e in enumerate(etfs):
                 with cols_etf[i]:
                     sym = e.get("symbol")
-                    name = e.get("name")
                     current = e.get("current")
-                    basis = e.get("basis")
                     chg = e.get("chg_pct")
+                    basis = e.get("basis")
                     state = e.get("market_state", "")
 
-                    title = sym
                     value_str = f"{current:.2f}" if current is not None else "N/A"
                     delta = f"{chg:.2f}%" if chg is not None else "-"
 
-                    st.metric(title, value_str, delta)
+                    st.metric(sym, value_str, delta)
                     extra = basis
                     if state:
                         extra += f" · 상태: {state}"
-                    st.caption(f"{name} · {extra}")
+                    st.caption(extra)
             st.caption('<span class="small-muted">※ %는 전일 종가 대비 기준입니다.</span>', unsafe_allow_html=True)
         else:
             st.write("ETF 데이터를 불러오지 못했습니다.")
 
     st.markdown("---")
 
-    # ==========================
     # 2) 내 종목 자동 판독기
-    # ==========================
     st.subheader("🔍 내 종목 자동 판독기 + 실전 보조지표")
 
     col_top1, col_top2 = st.columns(2)
@@ -1188,11 +1210,10 @@ with col_main:
 
     run_click = st.button("🚀 분석하기", key="run_analyze")
     run = run_click or st.session_state.get("run_from_side", False)
+    st.session_state["run_from_side"] = False
 
     if not run:
         st.stop()
-
-    st.session_state["run_from_side"] = False
 
     symbol = normalize_symbol(user_symbol)
     display_name = user_symbol
@@ -1241,7 +1262,6 @@ with col_main:
     else:
         price_move_abs = None
 
-    # ✅ 기술적 TP/SL만으로 손익비 계산
     tech_tp, tech_sl = calc_technical_tp_sl(df)
     rr = calc_rr_ratio(price, tech_tp, tech_sl)
 
@@ -1254,7 +1274,6 @@ with col_main:
 
     ext_price = get_last_extended_price(symbol)
 
-    # 즐겨찾기 체크
     is_fav = symbol in st.session_state["favorite_symbols"]
     fav_new = st.checkbox("⭐ 이 종목 즐겨찾기", value=is_fav)
     if fav_new and not is_fav:
@@ -1286,9 +1305,9 @@ with col_main:
         st.markdown(
             f"""
 <div class="card">
-  <div class="card-title">투자 모드</div>
+  <div class="card-title">MODE</div>
   <div class="card-value">{cfg['name']} 모드</div>
-  <div class="card-sub">차트 기간: {cfg['period']} · 손절 기준: -{cfg['stop_loss_pct']}% · 익절 기준: +{cfg['take_profit_pct']}%</div>
+  <div class="card-sub">차트 기간: {cfg['period']} · 손절: -{cfg['stop_loss_pct']}% · 익절: +{cfg['take_profit_pct']}%</div>
 </div>
 """,
             unsafe_allow_html=True,
@@ -1297,7 +1316,7 @@ with col_main:
         st.markdown(
             f"""
 <div class="card">
-  <div class="card-title">보유 정보</div>
+  <div class="card-title">POSITION</div>
   <div class="card-sub">보유 상태: <b>{holding_type}</b></div>
   <div class="card-sub">평단/수익률은 보유중일 때만 계산됩니다.</div>
 </div>
