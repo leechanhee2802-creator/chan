@@ -5,7 +5,7 @@ import numpy as np
 import requests
 
 # =====================================
-# 페이지 설정 + 기본 스타일 (4번 이미지 느낌, 밝은 다크모드)
+# 페이지 설정 + 전체 테마 (참고 이미지 느낌)
 # =====================================
 st.set_page_config(
     page_title="내 주식 자동판독기 (시장 개요 + 실전 보조지표)",
@@ -17,122 +17,134 @@ st.set_page_config(
 st.markdown(
     """
 <style>
-/* 전체 배경: 너무 까맣지 않은 남색 톤 */
+/* 전체 폰트 + 배경 */
+* {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+}
 [data-testid="stAppViewContainer"] {
-    background: #020617;
+    background: #111827;  /* 진한 남색 회색 */
     color: #e5e7eb;
 }
 
-/* 메인 컨테이너 넓게 & 가운데 정렬 느낌 */
+/* 메인 컨테이너 패딩 */
 main.block-container {
     padding-top: 1.5rem;
     padding-bottom: 2rem;
+    max-width: 1350px;
 }
 
-/* 사이드바 배경 */
+/* 사이드바 */
 [data-testid="stSidebar"] {
     background-color: #020617;
     color: #e5e7eb;
 }
 
-/* 제목/헤더 컬러 */
+/* 헤더류 */
 h1, h2, h3, h4 {
     color: #e5e7eb !important;
 }
 
-/* expander 카드 스타일 (조금 밝은 카드 배경) */
-details {
-    border-radius: 14px !important;
-    border: 1px solid #1e293b !important;
-    background-color: #020617 !important;
+/* 구분선: 밝은 색으로 눈에 잘 띄게 */
+hr {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+    border: 0;
+    border-top: 1px solid #4b5563;
 }
 
-/* metric 카드 스타일: 테두리 + 살짝 밝은 배경 */
-[data-testid="metric-container"] {
-    background-color: #020617;
-    border-radius: 12px;
-    padding: 8px 12px;
-    border: 1px solid #1f2937;
+/* 공통 카드 박스 (참고 이미지의 큰 카드 느낌) */
+.card {
+    background: #1f2937;
+    border-radius: 16px;
+    padding: 14px 18px;
+    border: 1px solid #374151;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
 }
 
-/* metric 제목(라벨) */
-[data-testid="metric-container"] > div:nth-child(1) {
-    font-size: 0.8rem;
+.card-title {
+    font-size: 0.78rem;
+    color: #9ca3af;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.card-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #f9fafb;
+    margin-bottom: 4px;
+}
+
+.card-sub {
+    font-size: 0.85rem;
     color: #cbd5f5;
+}
+
+/* 작은 카드 (측면, 보조 텍스트용) */
+.card-small {
+    background: #1f2937;
+    border-radius: 14px;
+    padding: 10px 12px;
+    border: 1px solid #374151;
+}
+
+/* expander 카드 스타일 */
+details {
+    border-radius: 16px !important;
+    border: 1px solid #374151 !important;
+    background-color: #1f2937 !important;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* metric 카드 스타일 (배경/테두리 통일) */
+[data-testid="metric-container"] {
+    background-color: #1f2937;
+    border-radius: 14px;
+    padding: 10px 14px;
+    border: 1px solid #374151;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* metric 라벨 */
+[data-testid="metric-container"] > div:nth-child(1) {
+    font-size: 0.78rem;
+    color: #9ca3af;
 }
 
 /* metric 값 */
 [data-testid="metric-container"] > div:nth-child(2) {
-    font-size: 1.25rem;
-    font-weight: 700;
+    font-size: 1.1rem;
+    font-weight: 600;
     color: #f9fafb;
 }
 
 /* metric 델타 */
 [data-testid="metric-container"] > div:nth-child(3) {
-    font-size: 0.9rem;
+    font-size: 0.86rem;
     color: #a5b4fc;
 }
 
-/* 구분선 여백 */
-hr {
-    margin-top: 0.8rem;
-    margin-bottom: 0.8rem;
-    border-color: #111827;
-}
-
-/* 커스텀 카드 박스 (상단 정보 카드들) */
-.card {
-    background: #020617;
-    border-radius: 14px;
-    padding: 12px 14px;
-    border: 1px solid #1e293b;
-}
-
-.card-title {
-    font-size: 0.75rem;
-    color: #9ca3af;
-    margin-bottom: 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-}
-
-.card-value {
-    font-size: 1.2rem;
-    font-weight: 600;
-    color: #e5e7eb;
-    margin-bottom: 4px;
-}
-
-.card-sub {
-    font-size: 0.8rem;
-    color: #cbd5f5;
-}
-
-/* 버튼 스타일 */
+/* 버튼 */
 .stButton>button {
     border-radius: 999px;
-    padding: 4px 16px;
-    font-size: 0.85rem;
-    border: 1px solid #1f2937;
-    background: #020617;
+    padding: 6px 18px;
+    font-size: 0.9rem;
+    border: 1px solid #4b5563;
+    background: #1f2937;
     color: #e5e7eb;
 }
 .stButton>button:hover {
     border-color: #3b82f6;
+    background: #111827;
 }
 
-/* 입력 박스 라운드 + 테두리 */
+/* 입력 박스 */
 [data-baseweb="input"] {
     border-radius: 999px !important;
 }
 
-/* 라디오/셀렉트 라벨 색 */
-label {
-    color: #e5e7eb !important;
-}
-
-/* 탭 헤더 배경 (둥근 네비게이션) */
+/* 탭 헤더 */
 [data-baseweb="tab-list"] {
     background-color: #020617;
     border-radius: 999px;
@@ -142,29 +154,29 @@ label {
     border-radius: 999px !important;
 }
 
-/* 표(Dataframe) 배경 */
+/* 표 배경 */
 [data-testid="stDataFrame"] {
-    background-color: #020617;
+    background-color: #111827;
 }
 
-/* 캡션용 클래스를 조금 더 밝게 */
+/* 캡션 스타일 */
 .small-muted {
     font-size: 0.8rem;
     color: #cbd5f5;
 }
 
-/* 오른쪽 즐겨찾기/최근검색 버튼 영역 */
+/* 오른쪽 즐겨찾기/최근 버튼 */
 .sidebar-button {
     width: 100%;
     text-align: left;
 }
 
-/* 데이터프레임 스크롤 영역 조금 어둡게 */
+/* 데이터프레임 테이블 */
 [data-testid="stTable"] {
-    background-color: #020617;
+    background-color: #111827;
 }
 
-/* 텍스트 입력 placeholder 글씨도 잘 보이게 */
+/* placeholder 글자색 */
 input::placeholder {
     color: #6b7280 !important;
 }
@@ -613,7 +625,7 @@ def comment_stoch(k, d):
 def comment_macd(macd, signal):
     if macd > 0 and macd > signal:
         return "상승 모멘텀 우위"
-    elif macd < 0 and maccd < signal:
+    elif macd < 0 and macd < signal:
         return "하락 모멘텀 우위"
     elif macd > signal:
         return "골든크로스(상방 전환 시도)"
@@ -1114,12 +1126,15 @@ with col_main:
                 st.metric("S&P500 선물", "N/A", "-")
         with col3:
             st.metric("시장 점수", f"{score_mkt} / 8", label_mkt)
-            st.caption('<span class="small-muted">(범위: -8 ~ 8 | 선물·금리·달러·ETF 기준 종합)</span>', unsafe_allow_html=True)
+            st.caption(
+                '<span class="small-muted">(범위: -8 ~ 8 | 선물·금리·달러·ETF 기준 종합)</span>',
+                unsafe_allow_html=True,
+            )
 
         if detail_mkt:
             st.caption("· " + detail_mkt)
 
-        st.markdown("---")
+        st.markdown("<hr>", unsafe_allow_html=True)
 
         col4, col5, col6 = st.columns(3)
         with col4:
@@ -1143,7 +1158,7 @@ with col_main:
             st.write("")
             st.caption('<span class="small-muted">※ 수치는 약간의 지연이 있을 수 있습니다.</span>', unsafe_allow_html=True)
 
-        st.markdown("---")
+        st.markdown("<hr>", unsafe_allow_html=True)
 
         st.caption("📈 ETF 3대장 (QQQ · VOO · SOXX)")
         if etfs:
@@ -1168,7 +1183,7 @@ with col_main:
         else:
             st.write("ETF 데이터를 불러오지 못했습니다.")
 
-    st.markdown("---")
+    st.markdown("<hr>", unsafe_allow_html=True)
 
     # 2) 내 종목 자동 판독기
     st.subheader("🔍 내 종목 자동 판독기 + 실전 보조지표")
