@@ -13,20 +13,25 @@ st.set_page_config(
     layout="wide",
 )
 
-# 대시보드 스타일 CSS (배경 더 푸르게, 글자 거의 전부 흰색 계열)
+# 대시보드 스타일 CSS – 모든 텍스트를 기본적으로 밝게 강제
 st.markdown(
     """
 <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 
-/* 전체 폰트 + 배경 */
+/* 전체 폰트 */
 * {
     font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 }
 
+/* 기본 텍스트 색을 전체적으로 밝게 강제 */
+html, body, [data-testid="stAppViewContainer"] * {
+    color: #e5e7eb !important;
+}
+
+/* 배경 */
 [data-testid="stAppViewContainer"] {
     background: radial-gradient(circle at top left, #1d2a4d 0, #0b1530 40%, #020617 100%);
-    color: #e5e7eb;
 }
 
 main.block-container {
@@ -38,10 +43,9 @@ main.block-container {
 /* 사이드바 */
 [data-testid="stSidebar"] {
     background-color: #020617;
-    color: #e5e7eb;
 }
 
-/* 헤더 사이즈/색 (촌스럽지 않게 축소) */
+/* 헤더 사이즈/색 */
 h1 {
     color: #f9fafb !important;
     font-size: 1.6rem !important;
@@ -63,11 +67,6 @@ h4 {
     font-weight: 500 !important;
 }
 
-/* 모든 label / 캡션 흰색 계열로 */
-label, .stRadio, .stSelectbox, .stNumberInput, .stTextInput, .stMetricLabel, .stMarkdown, .stCaption {
-    color: #e5e7eb !important;
-}
-
 /* 구분선 */
 hr {
     margin-top: 1rem;
@@ -76,7 +75,7 @@ hr {
     border-top: 1px solid #4b5563;
 }
 
-/* 공통 카드 박스 */
+/* 카드 박스 */
 .card {
     background: rgba(15,23,42,0.95);
     border-radius: 16px;
@@ -84,25 +83,22 @@ hr {
     border: 1px solid #374151;
     box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
 }
-
 .card-title {
     font-size: 0.78rem;
-    color: #cbd5f5;
+    color: #cbd5f5 !important;
     margin-bottom: 6px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
-
 .card-value {
     font-size: 1.4rem;
     font-weight: 600;
-    color: #f9fafb;
+    color: #f9fafb !important;
     margin-bottom: 4px;
 }
-
 .card-sub {
     font-size: 0.86rem;
-    color: #e5e7eb;
+    color: #e5e7eb !important;
 }
 
 /* 작은 카드 */
@@ -113,7 +109,7 @@ hr {
     border: 1px solid #374151;
 }
 
-/* expander 카드 스타일 */
+/* expander */
 details {
     border-radius: 16px !important;
     border: 1px solid #374151 !important;
@@ -121,7 +117,7 @@ details {
     box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
 }
 
-/* metric 카드 스타일 (나스닥/ETF 숫자 포함) */
+/* metric 카드 – 여기 안 숫자/텍스트도 모두 밝게 */
 [data-testid="metric-container"] {
     background-color: rgba(15,23,42,0.96);
     border-radius: 14px;
@@ -129,24 +125,13 @@ details {
     border: 1px solid #4b5563;
     box-shadow: 0 6px 12px rgba(0, 0, 0, 0.45);
 }
-
-/* metric 라벨 */
-[data-testid="metric-container"] > div:nth-child(1) {
-    font-size: 0.8rem;
-    color: #e5e7eb;
+[data-testid="metric-container"] * {
+    color: #f9fafb !important;
 }
-
-/* metric 값 (숫자) → 완전 흰색 */
-[data-testid="metric-container"] > div:nth-child(2) {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #ffffff;
-}
-
-/* metric 델타 (변동률) → 밝은 하늘색 */
-[data-testid="metric-container"] > div:nth-child(3) {
-    font-size: 0.9rem;
-    color: #7dd3fc;
+/* delta(변동률)는 하늘색으로 강조 */
+[data-testid="metric-container"] > div:nth-child(3),
+[data-testid="metric-container"] span[data-testid="stMetricDelta"] {
+    color: #7dd3fc !important;
 }
 
 /* 버튼 (즐겨찾기/최근 포함) */
@@ -156,7 +141,7 @@ details {
     font-size: 0.9rem;
     border: 1px solid #4b5563;
     background: rgba(15,23,42,0.96);
-    color: #f9fafb;
+    color: #f9fafb !important;
 }
 .stButton>button:hover {
     border-color: #38bdf8;
@@ -167,14 +152,17 @@ details {
 [data-baseweb="input"] {
     border-radius: 999px !important;
 }
-
-/* 입력박스 안 placeholder 색 */
+/* 입력 텍스트/placeholder */
+input, textarea {
+    color: #f9fafb !important;
+}
 input::placeholder {
     color: #9ca3af !important;
 }
 
-/* 라디오/셀렉트 텍스트 */
-[data-baseweb="radio"] label, [data-baseweb="select"] * {
+/* 라디오/셀렉트 내부 텍스트 */
+[data-baseweb="radio"] * ,
+[data-baseweb="select"] * {
     color: #e5e7eb !important;
 }
 
@@ -188,29 +176,22 @@ input::placeholder {
     border-radius: 999px !important;
 }
 
-/* 표/데이터프레임 배경 */
-[data-testid="stDataFrame"] {
-    background-color: #020617;
-}
+/* 표/데이터프레임 */
+[data-testid="stDataFrame"],
 [data-testid="stTable"] {
     background-color: #020617;
 }
 
-/* 캡션 */
+/* 캡션/작은 글씨 */
 .small-muted {
     font-size: 0.8rem;
-    color: #cbd5f5;
+    color: #cbd5f5 !important;
 }
 
 /* 오른쪽 즐겨찾기/최근 버튼 */
 .sidebar-button {
     width: 100%;
     text-align: left;
-}
-
-/* expander 안 텍스트도 선명하게 */
-details p, details span, details div {
-    color: #e5e7eb !important;
 }
 </style>
     """,
@@ -310,7 +291,7 @@ def normalize_symbol(user_input: str) -> str:
 
 
 # =====================================
-# 외부 지표 함수들 (FGI, 환율 등)
+# 외부 지표 함수들
 # =====================================
 def fetch_fgi():
     url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
@@ -351,7 +332,7 @@ def get_last_extended_price(symbol: str):
 
 
 # =====================================
-# 미국 시장 개요 (선물 / 금리 / 달러 / ETF)
+# 미국 시장 개요
 # =====================================
 def safe_last_change_info(ticker_str: str):
     try:
@@ -716,7 +697,7 @@ def short_term_bias(last_row):
 
 
 # =====================================
-# 매매 신호 / 레벨 / 보조 기능들
+# 매매 신호 / 레벨 등
 # =====================================
 def get_mode_config(mode_name: str):
     if mode_name == "단타":
@@ -958,7 +939,7 @@ def get_heavy_days(df: pd.DataFrame, n: int = 3):
     return res
 
 
-def intraday_score(df_5m: pd.DataFrame):
+def get_intraday_5m_score(df_5m: pd.DataFrame):
     if df_5m.empty:
         return None, "5분봉 데이터 부족"
 
@@ -1041,7 +1022,7 @@ def build_risk_alerts(market_score, last_row, gap_pct, atr14, price_move_abs):
 
 
 # =====================================
-# 세션 상태 (즐겨찾기/최근검색/클릭플래그)
+# 세션 상태
 # =====================================
 if "recent_symbols" not in st.session_state:
     st.session_state["recent_symbols"] = []
@@ -1060,7 +1041,7 @@ if "symbol_input" not in st.session_state:
 
 
 # =====================================
-# 레이아웃: 메인(왼쪽) + 오른쪽(즐겨찾기/최근)
+# 레이아웃: 메인 + 사이드
 # =====================================
 col_main, col_side = st.columns([3, 1])
 
@@ -1176,7 +1157,10 @@ with col_main:
 
         with col6:
             st.write("")
-            st.caption('<span class="small-muted">※ 수치는 약간의 지연이 있을 수 있습니다.</span>', unsafe_allow_html=True)
+            st.caption(
+                '<span class="small-muted">※ 수치는 약간의 지연이 있을 수 있습니다.</span>',
+                unsafe_allow_html=True,
+            )
 
         st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -1199,7 +1183,10 @@ with col_main:
                     if state:
                         extra += f" · 상태: {state}"
                     st.caption(extra)
-            st.caption('<span class="small-muted">※ %는 전일 종가 대비 기준입니다.</span>', unsafe_allow_html=True)
+            st.caption(
+                '<span class="small-muted">※ %는 전일 종가 대비 기준입니다.</span>',
+                unsafe_allow_html=True,
+            )
         else:
             st.write("ETF 데이터를 불러오지 못했습니다.")
 
@@ -1302,7 +1289,7 @@ with col_main:
 
     vp_levels = get_volume_profile(df)
     heavy_days = get_heavy_days(df)
-    intraday_sc, intraday_comment = intraday_score(df_5m)
+    intraday_sc, intraday_comment = get_intraday_5m_score(df_5m)
 
     score_mkt, _, _ = compute_market_score(ov)
     alerts = build_risk_alerts(score_mkt, last, gap_pct, atr14, price_move_abs)
