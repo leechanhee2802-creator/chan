@@ -5,7 +5,7 @@ import numpy as np
 import requests
 
 # =====================================
-# 페이지 설정 + 전체 테마
+# 페이지 설정
 # =====================================
 st.set_page_config(
     page_title="내 주식 자동판독기 (시장 개요 + 실전 보조지표)",
@@ -13,7 +13,9 @@ st.set_page_config(
     layout="wide",
 )
 
-# 대시보드 스타일 CSS (폰트/폰트크기는 유지, 배경은 라이트톤으로 변경)
+# =====================================
+# CSS: 라이트 테마 + 모바일/PC 모두 가독성 강화
+# =====================================
 st.markdown(
     """
 <style>
@@ -24,9 +26,14 @@ st.markdown(
     font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 }
 
-/* 앱 배경을 밝게 */
+/* 모든 텍스트를 진한 다크그레이로 (metric delta만 예외) */
+[data-testid="stAppViewContainer"] *:not([data-testid="stMetricDelta"]) {
+    color: #111827 !important;
+}
+
+/* 앱 배경: 살짝 컬러 들어간 그라데이션 */
 [data-testid="stAppViewContainer"] {
-    background: #f3f4f6;
+    background: radial-gradient(circle at top left, #e0e7ff 0, #f9fafb 40%, #ecfeff 100%);
 }
 
 /* 메인 컨테이너 */
@@ -37,27 +44,23 @@ main.block-container {
     background-color: transparent;
 }
 
-/* 헤더/사이드바도 라이트톤 */
+/* 헤더/사이드바 */
 header, [data-testid="stHeader"] {
     background-color: #ffffff !important;
+    box-shadow: 0 2px 4px rgba(15, 23, 42, 0.05);
 }
 [data-testid="stSidebar"] {
-    background-color: #f9fafb !important;
+    background-color: rgba(255,255,255,0.9) !important;
 }
 
-/* 카드/탭 패널 */
-[data-baseweb="tab-panel"], section, article {
-    background-color: transparent !important;
-}
-
-/* 헤더 사이즈/색 (이전 버전 유지) */
+/* 헤더 글씨 */
 h1 {
-    color: #111827 !important;
+    color: #0f172a !important;
     font-size: 1.6rem !important;
     font-weight: 600 !important;
 }
 h2 {
-    color: #111827 !important;
+    color: #0f172a !important;
     font-size: 1.25rem !important;
     font-weight: 600 !important;
 }
@@ -80,13 +83,13 @@ hr {
     border-top: 1px solid #e5e7eb;
 }
 
-/* 카드 박스 – 라이트 테마 */
+/* 카드 박스 – 메인 정보 */
 .card {
     background: #ffffff;
     border-radius: 16px;
     padding: 14px 18px;
     border: 1px solid #e5e7eb;
-    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
 }
 .card-title {
     font-size: 0.78rem;
@@ -98,7 +101,7 @@ hr {
 .card-value {
     font-size: 1.4rem;
     font-weight: 600;
-    color: #111827 !important;
+    color: #0f172a !important;
     margin-bottom: 4px;
 }
 .card-sub {
@@ -106,49 +109,57 @@ hr {
     color: #4b5563 !important;
 }
 
-/* 작은 카드 */
+/* 작은 카드 – 레이어, 서브 정보 */
 .card-small {
-    background: #ffffff;
+    background: rgba(255,255,255,0.96);
     border-radius: 14px;
     padding: 10px 12px;
     border: 1px solid #e5e7eb;
+    box-shadow: 0 6px 15px rgba(15, 23, 42, 0.06);
 }
 
-/* expander */
+/* 레이어용 줄 – 모바일에서 글자 선명하게 */
+.layer-line {
+    font-size: 0.9rem;
+    line-height: 1.4;
+    margin-bottom: 4px;
+}
+
+/* Expander(접기/펼치기) */
 details {
-    border-radius: 16px !important;
+    border-radius: 18px !important;
     border: 1px solid #e5e7eb !important;
-    background-color: #ffffff !important;
-    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+    background-color: rgba(255,255,255,0.96) !important;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.09);
 }
 
-/* metric 카드 – 라이트톤 */
+/* metric 카드 */
 [data-testid="metric-container"] {
     background-color: #ffffff;
     border-radius: 14px;
     padding: 10px 14px;
     border: 1px solid #e5e7eb;
-    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
 }
 [data-testid="stMetricLabel"] {
     color: #6b7280 !important;
 }
 [data-testid="stMetricValue"] {
-    color: #111827 !important;
+    color: #0f172a !important;
 }
 
-/* 버튼 (즐겨찾기/최근 포함) */
+/* 버튼 */
 .stButton>button {
     border-radius: 999px;
     padding: 6px 18px;
     font-size: 0.9rem;
     border: 1px solid #d1d5db;
-    background: #ffffff;
-    color: #111827 !important;
+    background: linear-gradient(135deg, #eff6ff 0, #ffffff 60%);
+    color: #0f172a !important;
 }
 .stButton>button:hover {
     border-color: #38bdf8;
-    background: #eff6ff;
+    box-shadow: 0 4px 10px rgba(56, 189, 248, 0.35);
 }
 
 /* 입력 박스 */
@@ -158,11 +169,11 @@ details {
 }
 [data-baseweb="input"] input {
     background-color: transparent !important;
-    color: #111827 !important;
+    color: #0f172a !important;
 }
 textarea {
     background-color: #ffffff !important;
-    color: #111827 !important;
+    color: #0f172a !important;
 }
 input::placeholder, textarea::placeholder {
     color: #9ca3af !important;
@@ -172,15 +183,21 @@ input::placeholder, textarea::placeholder {
 [data-baseweb="select"] > div {
     background-color: #ffffff !important;
 }
-[data-baseweb="radio"] > label {
+[data-baseweb="radio"] label {
     background-color: transparent !important;
+}
+
+/* 라디오/라벨 글씨가 모바일에서 흐리게 보이지 않도록 */
+label, [data-baseweb="radio"] span, [data-baseweb="select"] span {
+    color: #111827 !important;
 }
 
 /* 탭 헤더 */
 [data-baseweb="tab-list"] {
-    background-color: #e5e7eb;
+    background-color: rgba(255,255,255,0.8);
     border-radius: 999px;
     padding: 4px;
+    border: 1px solid #e5e7eb;
 }
 [data-baseweb="tab"] {
     border-radius: 999px !important;
@@ -197,13 +214,30 @@ input::placeholder, textarea::placeholder {
     color: #6b7280 !important;
 }
 
+/* 레이어 점수용 뱃지 */
+.badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background-color: #dcfce7;
+    color: #166534;
+}
+
+/* 섹터 뱃지는 살짝 다른 색 */
+.badge-sector {
+    background-color: #e0f2fe;
+    color: #075985;
+}
+
 /* 오른쪽 즐겨찾기/최근 버튼 */
 .sidebar-button {
     width: 100%;
     text-align: left;
 }
 </style>
-    """,
+""",
     unsafe_allow_html=True,
 )
 
@@ -657,54 +691,8 @@ def get_intraday_5m(symbol: str):
         return pd.DataFrame()
 
 # =====================================
-# 코멘트 함수들
+# 코멘트/신호 함수들
 # =====================================
-def comment_rsi(rsi):
-    if rsi < 30:
-        return "강한 과매도"
-    elif rsi < 40:
-        return "약한 과매도"
-    elif rsi < 60:
-        return "중립"
-    elif rsi < 70:
-        return "약한 과열"
-    else:
-        return "강한 과열"
-
-def comment_stoch(k, d):
-    if k > 80 and d > 80:
-        return "과열권"
-    elif k < 20 and d < 20:
-        return "침체/과매도권"
-    elif k > d and k > 50:
-        return "상승 모멘텀"
-    elif k < d and k < 50:
-        return "하락 모멘텀"
-    else:
-        return "중립"
-
-def comment_macd(macd, signal):
-    if macd > 0 and macd > signal:
-        return "상승 모멘텀 우위"
-    elif macd < 0 and macd < signal:
-        return "하락 모멘텀 우위"
-    elif macd > signal:
-        return "골든크로스(상방 전환 시도)"
-    elif macd < signal:
-        return "데드크로스(하방 전환 시도)"
-    else:
-        return "중립"
-
-def comment_bb(price, bbl, bbu, ma20):
-    if price > bbu:
-        return "밴드 상단 돌파(과열/급등 구간)"
-    elif price > ma20:
-        return "상단 영역(강세 추세)"
-    elif price < bbl:
-        return "밴드 하단 이탈(과매도/급락 구간)"
-    else:
-        return "중단~하단 영역(조정/중립)"
-
 def short_term_bias(last_row):
     price = float(last_row["Close"])
     ma5 = float(last_row["MA5"])
@@ -749,9 +737,6 @@ def short_term_bias(last_row):
     else:
         return "단기 중립~혼조 (방향성이 뚜렷하지 않음)"
 
-# =====================================
-# 매매 신호 / 레벨 등
-# =====================================
 def get_mode_config(mode_name: str):
     if mode_name == "단타":
         return {"name": "단타", "period": "3mo", "take_profit_pct": 7, "stop_loss_pct": 10}
@@ -933,17 +918,6 @@ def calc_technical_tp_sl(df: pd.DataFrame):
         return None, None
 
     return tech_tp, tech_sl
-
-def calc_rr_ratio(price, tp, sl):
-    if tp is None or sl is None:
-        return None
-    if tp <= price or sl >= price:
-        return None
-    risk = price - sl
-    reward = tp - price
-    if risk <= 0 or reward <= 0:
-        return None
-    return reward / risk
 
 def get_volume_profile(df: pd.DataFrame, bins: int = 5):
     recent = df.tail(20)
@@ -1130,10 +1104,10 @@ with col_side:
 # ---- 왼쪽: 메인 ----
 with col_main:
     st.title("📈 내 주식 자동판독기")
-    st.caption("시장 개요 + 개별 종목 판독 + 손익비/갭/ATR/장중 흐름까지 한 화면에서 확인")
+    st.caption("시장 개요 + 개별 종목 판독 + 레이어/갭/ATR/장중 흐름까지 한 화면에서 확인")
 
     # 1) 미국 시장 개요
-    with st.expander("🌍 미국 시장 실시간 흐름 (보조지표)", expanded=True):
+    with st.expander("🌍 미국 시장 실시간 흐름 (보조지표 레이어)", expanded=True):
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
             refresh = st.button("🔄 새로고침", key="refresh_overview")
@@ -1238,42 +1212,56 @@ with col_main:
         st.markdown("<hr>", unsafe_allow_html=True)
 
         # 💡 빅테크 레이어
-        st.markdown("**💡 빅테크 레이어 (NVDA/AAPL/MSFT/AMZN/META/GOOGL/TSLA)**")
+        st.markdown(
+            '<div class="card-small"><div class="card-title">BIG TECH LAYER</div>',
+            unsafe_allow_html=True,
+        )
         if bt_data:
             bt_col1, bt_col2 = st.columns([1, 2])
             with bt_col1:
-                st.metric("빅테크 강도 점수", f"{bt_score}", "상승+ / 하락-")
+                st.markdown(
+                    f'<span class="badge">빅테크 강도 점수: {bt_score}</span>',
+                    unsafe_allow_html=True,
+                )
             with bt_col2:
-                parts = []
+                lines = []
                 for d in bt_data:
-                    parts.append(
-                        f"{d['symbol']}: {format_change_html(d['chg'])}"
+                    lines.append(
+                        f'<div class="layer-line">{d["symbol"]}: {format_change_html(d["chg"])}</div>'
                     )
-                st.markdown(" · ".join(parts), unsafe_allow_html=True)
+                st.markdown("".join(lines), unsafe_allow_html=True)
         else:
             st.caption("빅테크 데이터를 불러오지 못했습니다.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("<hr>", unsafe_allow_html=True)
 
         # 🏗 섹터 로테이션 레이어
-        st.markdown("**🏗 섹터 로테이션 레이어 (대표 섹터 ETF)**")
+        st.markdown(
+            '<div class="card-small"><div class="card-title">SECTOR ROTATION LAYER</div>',
+            unsafe_allow_html=True,
+        )
         if sec_data:
             sec_col1, sec_col2 = st.columns([1, 2])
             with sec_col1:
-                st.metric("섹터 점수", f"{sec_score}", "성장+ / 방어-")
+                st.markdown(
+                    f'<span class="badge badge-sector">섹터 점수: {sec_score}</span>',
+                    unsafe_allow_html=True,
+                )
             with sec_col2:
-                parts = []
+                lines = []
                 for row in sec_data:
-                    parts.append(
-                        f"{row['name']}: {format_change_html(row['chg'])}"
+                    lines.append(
+                        f'<div class="layer-line">{row["name"]}: {format_change_html(row["chg"])}</div>'
                     )
-                st.markdown(" · ".join(parts), unsafe_allow_html=True)
+                st.markdown("".join(lines), unsafe_allow_html=True)
             st.caption(
                 '<span class="small-muted">※ 섹터별 강도 흐름을 통해 성장/방어/에너지 쏠림을 한 눈에 체크.</span>',
                 unsafe_allow_html=True,
             )
         else:
             st.caption("섹터 ETF 데이터를 불러오지 못했습니다.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -1431,9 +1419,8 @@ with col_main:
         )
 
     if holding_type == "보유 중" and avg_price > 0:
-        color_html = format_change_html(profit_pct)
-        st.markdown(f"- 평단가: **{avg_price:.2f} USD**", unsafe_allow_html=True)
-        st.markdown(f"- 수익률: {color_html}", unsafe_allow_html=True)
+        st.write(f"- 평단가: **{avg_price:.2f} USD**")
+        st.markdown(f"- 수익률: {format_change_html(profit_pct)}", unsafe_allow_html=True)
     if holding_type == "보유 중" and shares > 0 and avg_price > 0:
         rate = get_usdkrw_rate()
         cost_factor = 1 - commission_pct / 100
@@ -1450,12 +1437,11 @@ with col_main:
         st.write(f"**추천 액션:** ⭐ {signal} ⭐")
         st.write(f"**단기 방향성:** {bias_comment}")
     with col_sig2:
-        # 신규 진입 모드일 때: 리스크/리워드 요약 (손익비 숫자 대신 위/아래 %만)
         if holding_type == "신규 진입 검토" and tech_tp is not None and tech_sl is not None:
             up_pct = (tech_tp - price) / price * 100
             down_pct = (price - tech_sl) / price * 100
             up_html = format_change_html(up_pct)
-            down_html = format_change_html(-down_pct)  # 하락은 음수로
+            down_html = format_change_html(-down_pct)
             st.markdown("**신규 진입 관점 리스크·리워드**", unsafe_allow_html=True)
             st.markdown(f"- 위쪽 잠재 수익 여지: {up_html}", unsafe_allow_html=True)
             st.markdown(f"- 아래쪽 기술적 손실 여지: {down_html}", unsafe_allow_html=True)
@@ -1463,7 +1449,7 @@ with col_main:
 
     st.subheader("📌 가격 레벨 (진입/익절/손절 가이드)")
 
-    # 🎯 전략 기반 레벨 (내 모드 기준)
+    # 🎯 전략 기반 레벨
     st.markdown("**🎯 전략 기반 레벨 (내 단타/스윙/장기 설정 기준)**")
     if holding_type == "보유 중":
         st.write(f"- 매수/추가매수 구간: **{buy_low:.2f} ~ {buy_high:.2f} USD**")
