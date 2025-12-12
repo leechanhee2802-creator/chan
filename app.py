@@ -48,6 +48,24 @@ header, [data-testid="stHeader"], [data-testid="stSidebar"] {
     background-color: #ffffff !important;
 }
 
+/* Expander 전체를 흰색 배경 + 진한 글씨로 강제 (모바일 다크모드 대응) */
+[data-testid="stExpander"] {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+}
+[data-testid="stExpander"] > details {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+}
+[data-testid="stExpander"] details > summary {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+}
+[data-testid="stExpander"] details > div {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+}
+
 /* 제목들 */
 h1 {
     font-size: 1.6rem;
@@ -488,7 +506,7 @@ def get_etf_price_with_prepost(symbol: str, name: str):
         }
 
 
-# BIG TECH / SECTOR 레이어용
+# BIGTECH / SECTOR 레이어용
 BIGTECH_LIST = [
     ("NVDA", "NVDA"),
     ("AAPL", "AAPL"),
@@ -1224,11 +1242,10 @@ def build_risk_alerts(market_score, last_row, gap_pct, atr14, price_move_abs):
     return alerts
 
 # =====================================
-# 신규 진입 스캐너
+# 신규 진입 스캐너 (A안: 심플)
 # =====================================
 def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
     """
-    B + D 조합 느낌으로:
     - 매수 구간(buy_low ~ buy_high) 근처
     - RSI 과열 아님 (<= 65)
     - 단기 상방/중립 흐름
@@ -1315,6 +1332,10 @@ if "run_from_side" not in st.session_state:
 
 if "symbol_input" not in st.session_state:
     st.session_state["symbol_input"] = st.session_state["selected_symbol"]
+
+# 신규 진입 스캐너 결과 저장용
+if "scan_results" not in st.session_state:
+    st.session_state["scan_results"] = None
 
 # =====================================
 # 레이아웃: 메인 + 사이드
@@ -1507,6 +1528,9 @@ with col_main:
         st.markdown("---")
 
         # BIG TECH LAYER
+        bigtech_layer = ov.get("bigtech", {})
+        sector_layer = ov.get("sector", {})
+
         bt_score = bigtech_layer.get("score", 0)
         bt_items = bigtech_layer.get("items", [])
         st.markdown('<div class="card-soft">', unsafe_allow_html=True)
@@ -1602,105 +1626,42 @@ with col_main:
     # 신규 진입 스캐너 버튼
     scan_click = st.button("📊 신규 진입 스캐너 실행 (관심 종목 후보 찾기)", key="run_scan")
 
-    # ====== [업그레이드된 신규 진입 스캐너 UI - C 타입: 리스트 + 카드] ======
+    # 스캐너 실행 시 결과를 세션에 저장
     if scan_click:
         with st.spinner("신규 진입 후보 종목 스캔 중..."):
             scan_mkt_score, scan_list = scan_new_entry_candidates(cfg)
 
-        st.subheader("🛰 신규 진입 스캐너 결과")
+        st.session_state["scan_results"] = {
+            "cfg": cfg,
+            "market_score": scan_mkt_score,
+            "items": scan_list,
+        }
+
+    # 저장된 스캐너 결과가 있으면 항상 보여주기 (A안: 심플)
+    scan_data = st.session_state.get("scan_results")
+    if scan_data:
+        scan_mkt_score = scan_data["market_score"]
+        scan_list = scan_data["items"]
+
+        st.subheader("🛰 신규 진입 스캐너 결과 (간단 버전)")
         if scan_mkt_score <= -4:
             st.warning("시장 점수가 강한 Risk-off 구간이라, 신규 진입은 특히 보수적으로 볼 필요가 있습니다.")
 
         if not scan_list:
             st.write("조건을 만족하는 신규 진입 후보 종목이 없습니다.")
         else:
-            st.caption(f"총 **{len(scan_list)}개** 종목이 조건을 만족했습니다. (점수 순 정렬)")
-
-            # 리스트(테이블) 형태 요약
-            table_rows = []
-            for item in scan_list:
-                sym = item["symbol"]
-                price = item["price"]
-                rsi = item["rsi"]
-                bias = item["bias"]
-                dist_band = item["dist_band"]
-                buy_low = item["buy_low"]
-                buy_high = item["buy_high"]
-                table_rows.append({
-                    "종목": sym,
-                    "현재가(USD)": round(price, 2),
-                    "RSI14": round(rsi, 1),
-                    "단기 흐름": bias,
-                    "매수밴드 중심과 거리(%)": round(dist_band, 2),
-                    "매수밴드 하단": round(buy_low, 2),
-                    "매수밴드 상단": round(buy_high, 2),
-                })
-            df_scan = pd.DataFrame(table_rows).set_index("종목")
-            st.dataframe(df_scan, use_container_width=True)
-            st.caption("※ 리스트에서 대략적인 위치/밴드 확인 후, 아래 카드에서 개별 종목을 바로 분석할 수 있습니다.")
-
-            st.markdown("---")
-            st.markdown("#### 📌 후보 종목 카드 & 바로 분석")
+            st.caption(f"총 **{len(scan_list)}개** 종목이 조건을 만족했습니다.")
 
             for item in scan_list:
                 sym = item["symbol"]
                 price = item["price"]
-                rsi = item["rsi"]
                 bias = item["bias"]
-                dist_band = item["dist_band"]
-                buy_low = item["buy_low"]
-                buy_high = item["buy_high"]
-                tp1 = item["tp1"]
-                sl0 = item["sl0"]
-                score = item["score"]
+                score_val = item["score"]
 
-                # RSI 색상 클래스 선택
-                if rsi < 40:
-                    rsi_cls = "rsi-cold"
-                elif rsi > 65:
-                    rsi_cls = "rsi-hot"
-                else:
-                    rsi_cls = "rsi-neutral"
-
-                # 밴드 중심과의 거리 → 게이지 (가까울수록 굵게)
-                # 0%면 100%, 3% 넘어가면 최소 10% 정도로 표현
-                gauge_fill = max(10, min(100, int(100 - dist_band * 25)))
-
-                st.markdown('<div class="card-soft-sm">', unsafe_allow_html=True)
                 st.markdown(
-                    f"""
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-  <div style="font-size:1.0rem;font-weight:700;">{sym}</div>
-  <div class="chip chip-blue">스코어: {score:.1f}</div>
-</div>
-<div style="font-size:0.9rem;margin-bottom:4px;">
-  현재가: <b>{price:.2f} USD</b> · 
-  RSI: <span class="{rsi_cls}">{rsi:.1f}</span> ({comment_rsi(rsi)}) · 
-  단기 흐름: {bias}
-</div>
-<div style="font-size:0.88rem;margin-bottom:4px;">
-  매수 밴드: <b>{buy_low:.2f} ~ {buy_high:.2f} USD</b><br>
-  밴드 중심과의 거리: 약 {dist_band:.2f}%
-</div>
-<div style="width:100%;height:6px;border-radius:999px;background:#e5e7eb;margin:6px 0 2px 0;">
-  <div style="width:{gauge_fill}%;height:100%;border-radius:999px;background:#4f46e5;"></div>
-</div>
-<div class="small-muted">게이지가 길수록 '매수 밴드 중심'에 더 가까운 위치입니다.</div>
-""",
-                    unsafe_allow_html=True,
+                    f"**{sym}**  |  현재가: **{price:.2f} USD**  |  단기 흐름: {bias}  |  종합 스코어: **{score_val:.1f}**"
                 )
-                if tp1 is not None and sl0 is not None:
-                    st.markdown(
-                        f"""
-<div class="small-muted">
-1차 목표: <b>{tp1:.2f} USD</b> · 추세 손절 기준: <b>{sl0:.2f} USD</b>
-</div>
-""",
-                        unsafe_allow_html=True,
-                    )
-                st.markdown('</div>', unsafe_allow_html=True)
-
-                go = st.button(f"📌 {sym} 이 종목 분석하기", key=f"scan_go_{sym}")
+                go = st.button(f"🔍 {sym} 이 종목 분석하기", key=f"scan_go_{sym}")
                 if go:
                     st.session_state["symbol_input"] = sym
                     st.session_state["selected_symbol"] = sym
@@ -1755,14 +1716,12 @@ with col_main:
         st.session_state["recent_symbols"] = st.session_state["recent_symbols"][-30:]
 
     price = float(last["Close"])
-    # 수익률/평가손익은 "보조 정보"로만 사용 (신호에는 사용 X)
     profit_pct = (price - avg_price) / avg_price * 100 if avg_price > 0 else 0.0
     total_pnl = (price - avg_price) * shares if (shares > 0 and avg_price > 0) else 0.0
 
     eff_avg_price = avg_price if holding_type == "보유 중" else 0.0
     buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, eff_avg_price, cfg)
 
-    # 기술적 TP/SL (손익비 계산용)
     tech_tp, tech_sl = calc_technical_tp_sl(df, cfg)
     rr = calc_rr_ratio(price, tech_tp, tech_sl)
 
@@ -1837,7 +1796,6 @@ with col_main:
             unsafe_allow_html=True,
         )
 
-    # 수익률/평가손익: 항상 보여주지만 신호 계산에는 사용 X
     if holding_type == "보유 중" and avg_price > 0:
         st.write(f"- 평단가: **{avg_price:.2f} USD**")
         st.write(f"- 수익률: **{profit_pct:.2f}%**")
@@ -1888,7 +1846,6 @@ with col_main:
             st.write(f"- 2차 분할매수(조정 시): **{entry2:.2f} USD** 이하 구간")
             st.caption("※ 신규 진입은 1·2차로 나누어 분할 매수하는 기준입니다.")
 
-        # 신규 진입 리스크·리워드 요약
         st.markdown("#### 신규 진입 관련 리스크·리워드 요약")
         if tech_tp is not None and tech_sl is not None:
             up_side = (tech_tp - price) / price * 100
