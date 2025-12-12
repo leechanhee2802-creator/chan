@@ -332,6 +332,12 @@ POPULAR_SYMBOLS = [
     "ORCL", "PYPL", "NFLX", "PLTR", "AVGO",
 ]
 
+# 신규 진입 스캐너용 후보 리스트 (필요시 여기에 추가해도 됨)
+SCAN_CANDIDATES = sorted(set(
+    POPULAR_SYMBOLS
+    + ["NVDA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "TSLA"]
+))
+
 
 def normalize_symbol(user_input: str) -> str:
     name = user_input.strip()
@@ -785,18 +791,147 @@ def short_term_bias(last_row):
         return "단기 중립~혼조 (방향성이 뚜렷하지 않음)"
 
 # =====================================
-# 매매 신호 / 레벨 등
+# 매매 신호 / 레벨 등 (추세·지지/저항 기반)
 # =====================================
 def get_mode_config(mode_name: str):
+    """
+    모드별로 기간/추세 민감도만 다르게 설정
+    - 퍼센트 손절/익절은 사용하지 않고, 추세/지지·저항 기반으로만 판단
+    """
     if mode_name == "단타":
-        return {"name": "단타", "period": "3mo", "take_profit_pct": 7, "stop_loss_pct": 10}
+        return {
+            "name": "단타",
+            "period": "3mo",
+            "lookback_short": 10,   # 스윙저점/고점
+            "lookback_long": 20,    # 박스 하단/상단
+            "atr_mult": 1.0,        # ATR 손절 민감도
+        }
     elif mode_name == "장기":
-        return {"name": "장기", "period": "1y", "take_profit_pct": 25, "stop_loss_pct": 30}
+        return {
+            "name": "장기",
+            "period": "1y",
+            "lookback_short": 20,
+            "lookback_long": 60,
+            "atr_mult": 1.6,
+        }
+    else:  # 스윙
+        return {
+            "name": "스윙",
+            "period": "6mo",
+            "lookback_short": 15,
+            "lookback_long": 40,
+            "atr_mult": 1.3,
+        }
+
+
+def calc_trend_stops(df: pd.DataFrame, cfg: dict):
+    """
+    손절 조합(1 + 2 + 5 + 6)을 이용해서
+    - 0차 손절 (추세 이탈선)
+    - 1차 손절 (깊은 방어선)
+    계산
+    """
+    if df.empty:
+        return None, None
+
+    last = df.iloc[-1]
+    price = float(last["Close"])
+    ma20 = float(last["MA20"])
+    atr = float(last["ATR14"]) if "ATR14" in last and not np.isnan(last["ATR14"]) else None
+
+    recent_short = df.tail(cfg["lookback_short"])
+    recent_long = df.tail(cfg["lookback_long"])
+
+    swing_low = float(recent_short["Low"].min())
+    box_low = float(recent_long["Low"].min())
+
+    candidates = []
+
+    # 1) 최근 스윙 저점
+    if swing_low < price:
+        candidates.append(swing_low * 0.995)
+
+    # 2) MA20 이탈선
+    if ma20 < price:
+        candidates.append(ma20 * 0.99)
+
+    # 5) 박스 하단
+    if box_low < price:
+        candidates.append(box_low * 0.995)
+
+    # 6) ATR 기반 변동성 손절
+    if atr is not None and atr > 0:
+        atr_stop = price - cfg["atr_mult"] * atr
+        if atr_stop < price:
+            candidates.append(atr_stop)
+
+    if not candidates:
+        return None, None
+
+    # 0차 손절: 가장 위에 있는(가장 타이트한) 손절선
+    sl0 = max(candidates)
+
+    # 1차(깊은) 손절: 박스 하단/스윙저점 근처 좀 더 깊게
+    deep_candidate = min(box_low * 0.985, swing_low * 0.985)
+    sl1 = min(sl0 * 0.97, deep_candidate)
+
+    return sl0, sl1
+
+
+def calc_trend_targets(df: pd.DataFrame, cfg: dict):
+    """
+    익절 조합 (1 + 2 중심, 3 보조)
+    - 최근 스윙 고점/박스 상단 중심
+    - 볼밴 상단 + RSI 과열은 보조
+    0차/1차/2차 익절 레벨 계산
+    """
+    if df.empty:
+        return None, None, None
+
+    last = df.iloc[-1]
+    price = float(last["Close"])
+    ma20 = float(last["MA20"])
+    bbu = float(last["BBU"])
+    rsi = float(last["RSI14"])
+
+    recent_short = df.tail(cfg["lookback_short"])
+    recent_long = df.tail(cfg["lookback_long"])
+
+    swing_high = float(recent_short["High"].max())
+    box_high = float(recent_long["High"].max())
+
+    base_res = max(swing_high * 0.995, box_high * 0.99)
+
+    # 볼밴 상단을 살짝 밑으로 보조 저항으로 사용
+    if not np.isnan(bbu):
+        base_res = max(base_res, bbu * 0.98)
+
+    if base_res <= price:
+        # 너무 가까우면 보수적으로 6~8% 위로 잡음
+        tp1 = price * 1.08
     else:
-        return {"name": "스윙", "period": "6mo", "take_profit_pct": 12, "stop_loss_pct": 20}
+        tp1 = base_res
+
+    # 0차: price와 tp1 사이의 중간 정도
+    tp0 = price + (tp1 - price) * 0.6
+
+    # 2차: tp1 위로 한 단계 더
+    tp2 = tp1 + (tp1 - price) * 0.7
+
+    # RSI가 이미 과열이면(>70) 전체 TP들을 살짝 더 타이트하게 조정
+    if rsi > 70:
+        tp0 = price + (tp1 - price) * 0.5
+        tp2 = tp1 + (tp1 - price) * 0.4
+
+    return tp0, tp1, tp2
 
 
-def make_signal(row, avg_price, cfg, fgi=None):
+def make_signal(row, avg_price, cfg, fgi=None, main_tp=None, main_sl=None):
+    """
+    - 신규 진입: 이전 로직 유지 (공포/탐욕 + 과매도 기준)
+    - 보유 중: 수익률은 보조정보로만 사용, 신호는
+      추세(가격 vs MA20, MACD), 과열/과매도, main_tp/main_sl 기반
+    """
     price = float(row["Close"])
     bbl = float(row["BBL"])
     bbu = float(row["BBU"])
@@ -807,14 +942,6 @@ def make_signal(row, avg_price, cfg, fgi=None):
     macds = float(row["MACD_SIGNAL"])
     rsi = float(row["RSI14"])
 
-    take_profit_pct = cfg["take_profit_pct"]
-    stop_loss_pct = cfg["stop_loss_pct"]
-
-    if avg_price > 0:
-        profit_pct = (price - avg_price) / avg_price * 100
-    else:
-        profit_pct = 0.0
-
     fear = (fgi is not None and fgi <= 25)
     greed = (fgi is not None and fgi >= 75)
 
@@ -822,6 +949,9 @@ def make_signal(row, avg_price, cfg, fgi=None):
     mild_overbought = (price > ma20 and (k > 70 or rsi > 60))
     strong_oversold = (price < bbl and k < 20 and d < 20 and rsi < 35)
 
+    # ─────────────────────
+    # 1) 신규 진입 관점
+    # ─────────────────────
     if avg_price <= 0:
         if fear and price < bbl * 1.02 and k < 30 and rsi < 45:
             return "초기 매수 관심 (공포 국면)"
@@ -832,61 +962,48 @@ def make_signal(row, avg_price, cfg, fgi=None):
         else:
             return "관망 (신규 진입 관점)"
 
-    base_buy_cond = (strong_oversold and profit_pct > -stop_loss_pct)
-    if fear and price < bbl * 1.02 and k < 30 and rsi < 45 and profit_pct > -stop_loss_pct * 1.2:
-        return "분할매수 (공포 국면)"
-    elif greed and price < bbl * 0.98 and k < 15 and rsi < 30 and profit_pct > -stop_loss_pct:
-        return "분할매수"
-    elif base_buy_cond:
-        return "분할매수"
+    # ─────────────────────
+    # 2) 보유 관점 (수익률 사용 X, 추세·지지/저항 기반)
+    # ─────────────────────
+    trend_up = (price > ma20 and macd > macds and rsi >= 45)
+    broken_trend = (main_sl is not None and price < main_sl * 0.995)
+    near_tp_zone = (main_tp is not None and price >= main_tp * 0.95)
 
-    loss_pct = -profit_pct if avg_price > 0 else 0.0
-    lower_bound = stop_loss_pct
-    upper_bound = stop_loss_pct + 10
+    # 손절 구간: 주요 지지/추세 이탈
+    if broken_trend:
+        return "손절 or 비중축소 (주요 지지/추세 이탈)"
 
-    oversold_signals = 0
-    if rsi < 30:
-        oversold_signals += 1
-    if k < 20 and d < 20:
-        oversold_signals += 1
-    if price < bbl * 1.02:
-        oversold_signals += 1
-    if macd > macds:
-        oversold_signals += 1
+    # 과열 + 저항 접근: 부분매도/강한 부분매도
+    if main_tp is not None and price >= main_tp * 0.98 and strong_overbought:
+        return "강한 부분매도 (수익 구간 + 추세 과열)"
+    if near_tp_zone and (mild_overbought or rsi > 70):
+        return "부분매도 (저항 부근 접근)"
 
-    rational_loss = (loss_pct >= lower_bound and loss_pct <= upper_bound)
-    rational_oversold = (oversold_signals >= 2)
+    # 과매도 + 추세 유지: 합리적 분할매수
+    if strong_oversold and not broken_trend:
+        return "합리적 분할매수 (추세 유지 + 과매도)"
 
-    if rational_loss and rational_oversold:
-        return "합리적 물타기 분할매수"
+    # 추세 상방 유지: 홀딩
+    if trend_up:
+        return "보유/추세 유지 (상방 추세 진행 중)"
 
-    hit_target = (profit_pct >= take_profit_pct)
-    if hit_target and (strong_overbought or (greed and mild_overbought)):
-        return "강한 부분매도 (수익+과열)"
-    if hit_target:
-        return "부분매도 (수익 목표 도달)"
-    if strong_overbought or (greed and mild_overbought):
-        return "위험주의 (지표 과열 대비 수익 낮음)"
-
-    if profit_pct <= -stop_loss_pct:
-        return "손절 or 비중축소 고려"
-
-    return "관망"
+    # 그 외: 애매 → 관망
+    return "관망 (부분청산·분할매수 모두 애매한 구간)"
 
 
 def calc_levels(df, last, avg_price, cfg):
-    recent = df.tail(20)
-    recent_high = float(recent["Close"].max())
-    recent_low = float(recent["Close"].min())
+    """
+    - 매수/추가 매수 구간: MA20 vs 볼밴 하단 기준
+    - 익절/손절: 위에서 정의한 추세 기반 함수 사용
+    """
+    if df.empty:
+        return None, None, None, None, None, None, None
 
     price = float(last["Close"])
     ma20 = float(last["MA20"])
     bbl = float(last["BBL"])
-    bbu = float(last["BBU"])
 
-    take_profit_pct = cfg["take_profit_pct"]
-    stop_loss_pct = cfg["stop_loss_pct"]
-
+    # 매수/추가매수 구간
     if price > ma20:
         buy_low = ma20 * 0.98
         buy_high = ma20 * 1.01
@@ -894,31 +1011,8 @@ def calc_levels(df, last, avg_price, cfg):
         buy_low = bbl * 0.98
         buy_high = bbl * 1.02
 
-    tp0_pct = take_profit_pct * 0.6
-    tp1_pct = take_profit_pct
-    tp2_pct = take_profit_pct * 1.8
-
-    if avg_price > 0:
-        base0 = avg_price * (1 + tp0_pct / 100)
-        base1 = avg_price * (1 + tp1_pct / 100)
-        base2 = avg_price * (1 + tp2_pct / 100)
-    else:
-        base0 = price * (1 + tp0_pct / 100)
-        base1 = price * (1 + tp1_pct / 100)
-        base2 = price * (1 + tp2_pct / 100)
-
-    tp0 = max(base0, recent_high * 0.97, ma20 * 1.02)
-    tp1 = max(base1, recent_high * 0.99, bbu * 0.98, tp0 * 1.02)
-    tp2 = max(base2, recent_high * 1.01, bbu * 1.01, tp1 * 1.03)
-
-    if avg_price > 0:
-        mode_stop = avg_price * (1 - stop_loss_pct / 100)
-    else:
-        mode_stop = price * (1 - stop_loss_pct / 100)
-
-    sl0 = mode_stop
-    deep_candidate = min(recent_low * 0.99, bbl * 0.97)
-    sl1 = min(sl0 * 0.97, deep_candidate)
+    tp0, tp1, tp2 = calc_trend_targets(df, cfg)
+    sl0, sl1 = calc_trend_stops(df, cfg)
 
     return buy_low, buy_high, tp0, tp1, tp2, sl0, sl1
 
@@ -942,36 +1036,26 @@ def calc_gap_info(df: pd.DataFrame):
     return gap_pct, comment
 
 
-def calc_technical_tp_sl(df: pd.DataFrame):
-    recent = df.tail(20)
-    if len(recent) < 5:
+def calc_technical_tp_sl(df: pd.DataFrame, cfg: dict):
+    """
+    리스크·리워드 계산용 기술적 TP/SL
+    - 1차 익절선(tp1), 0차 손절선(sl0) 사용
+    """
+    if df.empty:
         return None, None
 
-    last = recent.iloc[-1]
+    tp0, tp1, tp2 = calc_trend_targets(df, cfg)
+    sl0, sl1 = calc_trend_stops(df, cfg)
+
+    if tp1 is None or sl0 is None:
+        return None, None
+
+    last = df.iloc[-1]
     price = float(last["Close"])
-    recent_high = float(recent["Close"].max())
-    recent_low = float(recent["Close"].min())
-    ma20 = float(last["MA20"])
-    bbl = float(last["BBL"])
-    bbu = float(last["BBU"])
-
-    tp_candidates = [
-        recent_high * 0.99,
-        bbu * 0.98,
-        ma20 * 1.03,
-    ]
-    tech_tp = max(tp_candidates)
-
-    sl_candidates = [
-        recent_low * 1.01,
-        bbl * 1.01,
-    ]
-    tech_sl = min(sl_candidates)
-
-    if tech_tp <= price or tech_sl >= price:
+    if tp1 <= price or sl0 >= price:
         return None, None
 
-    return tech_tp, tech_sl
+    return tp1, sl0
 
 
 def calc_rr_ratio(price, tp, sl):
@@ -1107,6 +1191,84 @@ def build_risk_alerts(market_score, last_row, gap_pct, atr14, price_move_abs):
         alerts.append("✅ 특별한 리스크 경고 없음 (기본적인 기술적/시장 환경)")
 
     return alerts
+
+# =====================================
+# 신규 진입 스캐너
+# =====================================
+def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
+    """
+    B + D 조합 느낌으로:
+    - 매수 구간(buy_low ~ buy_high) 근처
+    - RSI 과열 아님 (<= 65)
+    - 단기 상방/중립 흐름
+    을 만족하는 종목을 후보로 뽑음.
+    """
+    results = []
+
+    ov = get_us_market_overview()
+    market_score, _, _ = compute_market_score(ov)
+
+    for sym in SCAN_CANDIDATES:
+        df = get_price_data(sym, cfg["period"])
+        if df.empty:
+            continue
+        df = add_indicators(df)
+        if df.empty or len(df) < max(30, cfg["lookback_long"] + 5):
+            continue
+
+        last = df.iloc[-1]
+        price = float(last["Close"])
+        rsi = float(last["RSI14"])
+        k = float(last["STOCH_K"])
+        d = float(last["STOCH_D"])
+
+        buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, 0.0, cfg)
+        if buy_low is None or buy_high is None:
+            continue
+
+        # 매수 밴드 기준 위치
+        band_center = (buy_low + buy_high) / 2
+        dist_band_pct = abs(price - band_center) / price * 100
+
+        # 조건:
+        # - 매수밴드 3% 밖으로 벗어나면 제외
+        # - RSI 과열 제외
+        # - 장기 하락 모멘텀 제외
+        if price < buy_low * 0.97 or price > buy_high * 1.05:
+            continue
+        if rsi > 65:
+            continue
+
+        bias = short_term_bias(last)
+        score = 0
+        if "상방" in bias:
+            score += 2
+        elif "중립" in bias:
+            score += 1
+
+        # 매수 구간 중심과 가까울수록 점수↑
+        score += max(0, 3 - dist_band_pct)  # 0~3 정도
+
+        # RSI가 45~55 근처일수록 점수↑ (무리하지 않은 구간)
+        score += max(0, 2 - abs(rsi - 50) / 10)
+
+        results.append(
+            {
+                "symbol": sym,
+                "price": price,
+                "rsi": rsi,
+                "bias": bias,
+                "dist_band": dist_band_pct,
+                "buy_low": buy_low,
+                "buy_high": buy_high,
+                "tp1": tp1,
+                "sl0": sl0,
+                "score": score,
+            }
+        )
+
+    results_sorted = sorted(results, key=lambda x: x["score"], reverse=True)
+    return market_score, results_sorted[:max_results]
 
 # =====================================
 # 세션 상태
@@ -1399,6 +1561,8 @@ with col_main:
             step=0.05,
         )
 
+    cfg = get_mode_config(mode_name)
+
     prefix = user_symbol.strip().upper().replace(" ", "")
     candidates = sorted(set(POPULAR_SYMBOLS + st.session_state["recent_symbols"]))
     suggestions = []
@@ -1406,6 +1570,42 @@ with col_main:
         suggestions = [s for s in candidates if s.startswith(prefix)]
     if suggestions:
         st.caption("자동완성 도움: " + ", ".join(suggestions[:6]))
+
+    # 신규 진입 스캐너 버튼
+    scan_click = st.button("📊 신규 진입 스캐너 실행 (관심 종목 후보 찾기)", key="run_scan")
+
+    if scan_click:
+        with st.spinner("신규 진입 후보 종목 스캔 중..."):
+            scan_mkt_score, scan_list = scan_new_entry_candidates(cfg)
+        st.subheader("🛰 신규 진입 스캐너 결과")
+        if scan_mkt_score <= -4:
+            st.warning("시장 점수가 강한 Risk-off 구간이라, 신규 진입은 특히 보수적으로 볼 필요가 있습니다.")
+        if not scan_list:
+            st.write("조건을 만족하는 신규 진입 후보 종목이 없습니다.")
+        else:
+            for item in scan_list:
+                sym = item["symbol"]
+                price = item["price"]
+                rsi = item["rsi"]
+                bias = item["bias"]
+                buy_low = item["buy_low"]
+                buy_high = item["buy_high"]
+                tp1 = item["tp1"]
+                sl0 = item["sl0"]
+                st.write(
+                    f"- **{sym}** 현재가 **{price:.2f} USD** · RSI **{rsi:.1f}** · 단기 흐름: {bias}"
+                )
+                if tp1 is not None and sl0 is not None:
+                    st.caption(
+                        f"  ↳ 신규 진입 관심 구간: {buy_low:.2f} ~ {buy_high:.2f} USD, "
+                        f"1차 목표: {tp1:.2f} USD, 추세 손절 기준: {sl0:.2f} USD"
+                    )
+                else:
+                    st.caption(
+                        f"  ↳ 신규 진입 관심 구간: {buy_low:.2f} ~ {buy_high:.2f} USD "
+                        f"(추세 손절/목표가는 데이터 부족으로 단순 참고)"
+                    )
+        st.markdown("---")
 
     col_mid1, col_mid2 = st.columns(2)
     avg_price = 0.0
@@ -1431,8 +1631,6 @@ with col_main:
         st.error("❌ 종목 이름 또는 티커가 비어있습니다. 다시 입력해 주세요.")
         st.stop()
 
-    cfg = get_mode_config(mode_name)
-
     with st.spinner("데이터 불러오는 중..."):
         ov = get_us_market_overview()
         fgi = ov.get("fgi")
@@ -1455,12 +1653,17 @@ with col_main:
         st.session_state["recent_symbols"] = st.session_state["recent_symbols"][-30:]
 
     price = float(last["Close"])
+    # 수익률/평가손익은 "보조 정보"로만 사용 (신호에는 사용 X)
     profit_pct = (price - avg_price) / avg_price * 100 if avg_price > 0 else 0.0
     total_pnl = (price - avg_price) * shares if (shares > 0 and avg_price > 0) else 0.0
 
     eff_avg_price = avg_price if holding_type == "보유 중" else 0.0
-    signal = make_signal(last, eff_avg_price, cfg, fgi)
     buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, eff_avg_price, cfg)
+
+    # 기술적 TP/SL (손익비 계산용)
+    tech_tp, tech_sl = calc_technical_tp_sl(df, cfg)
+    rr = calc_rr_ratio(price, tech_tp, tech_sl)
+
     bias_comment = short_term_bias(last)
 
     gap_pct, gap_comment = calc_gap_info(df)
@@ -1469,9 +1672,6 @@ with col_main:
         price_move_abs = abs(float(last["Close"]) - float(last["Open"]))
     else:
         price_move_abs = None
-
-    tech_tp, tech_sl = calc_technical_tp_sl(df)
-    rr = calc_rr_ratio(price, tech_tp, tech_sl)
 
     vp_levels = get_volume_profile(df)
     heavy_days = get_heavy_days(df)
@@ -1488,6 +1688,9 @@ with col_main:
         st.session_state["favorite_symbols"].append(symbol)
     elif (not fav_new) and is_fav:
         st.session_state["favorite_symbols"].remove(symbol)
+
+    # 추천 액션은 추세기반 main_tp(tp1), main_sl(sl0)를 사용
+    signal = make_signal(last, eff_avg_price, cfg, fgi, main_tp=tp1, main_sl=sl0)
 
     # ==========================
     # UI 출력
@@ -1515,7 +1718,7 @@ with col_main:
 <div class="card-soft-sm">
   <div class="small-muted">MODE</div>
   <div style="font-size:1.05rem;font-weight:600;">{cfg['name']} 모드</div>
-  <div class="small-muted">차트 기간: {cfg['period']} · 손절: -{cfg['stop_loss_pct']}% · 익절: +{cfg['take_profit_pct']}%</div>
+  <div class="small-muted">차트 기간: {cfg['period']} · 손절/익절: 추세·지지/저항 기반</div>
 </div>
 """,
             unsafe_allow_html=True,
@@ -1532,6 +1735,7 @@ with col_main:
             unsafe_allow_html=True,
         )
 
+    # 수익률/평가손익: 항상 보여주지만 신호 계산에는 사용 X
     if holding_type == "보유 중" and avg_price > 0:
         st.write(f"- 평단가: **{avg_price:.2f} USD**")
         st.write(f"- 수익률: **{profit_pct:.2f}%**")
@@ -1558,22 +1762,29 @@ with col_main:
             elif rr <= 1.0:
                 st.caption("⚠ 손익비 좋지 않음 (기술적으로 손절 폭이 더 큼)")
         else:
-            st.caption("손익비 계산 불가 (기술적 TP/SL 기준이 불안정한 위치)")
+            st.caption("손익비 계산 불가 (기술적 TP/SL 기준이 애매한 위치)")
 
     st.subheader("📌 가격 레벨 (진입/익절/손절 가이드)")
     if holding_type == "보유 중":
-        st.write(f"- 매수/추가매수 구간: **{buy_low:.2f} ~ {buy_high:.2f} USD**")
-        st.write(f"- 0차 매도 추천가: **{tp0:.2f} USD**")
-        st.write(f"- 1차 매도 추천가: **{tp1:.2f} USD**")
-        st.write(f"- 2차 매도 추천가: **{tp2:.2f} USD**")
-        st.write(f"- 0차 손절가: **{sl0:.2f} USD**")
-        st.write(f"- 1차 손절가(최종 방어선): **{sl1:.2f} USD**")
+        if buy_low is not None and buy_high is not None:
+            st.write(f"- 추가매수 관심 구간(추세 유지시): **{buy_low:.2f} ~ {buy_high:.2f} USD**")
+        if tp0 is not None:
+            st.write(f"- 0차 매도(부분 익절) 추천가: **{tp0:.2f} USD**")
+        if tp1 is not None:
+            st.write(f"- 1차 매도(주요 저항/목표): **{tp1:.2f} USD**")
+        if tp2 is not None:
+            st.write(f"- 2차 매도(확장 목표/과열 구간): **{tp2:.2f} USD**")
+        if sl0 is not None:
+            st.write(f"- 0차 손절가(추세 이탈 기준): **{sl0:.2f} USD**")
+        if sl1 is not None:
+            st.write(f"- 1차 손절가(최종 방어선): **{sl1:.2f} USD**")
     else:
-        entry1 = min(buy_high, buy_low * 1.03)
-        entry2 = buy_low
-        st.write(f"- 1차 진입(소량 매수) 추천가: **{entry1:.2f} USD** 근처")
-        st.write(f"- 2차 분할매수(조정 시): **{entry2:.2f} USD** 이하 구간")
-        st.caption("※ 신규 진입은 1·2차로 나누어 분할 매수하는 기준입니다.")
+        if buy_low is not None and buy_high is not None:
+            entry1 = min(buy_high, buy_low * 1.03)
+            entry2 = buy_low
+            st.write(f"- 1차 진입(소량 매수) 추천가: **{entry1:.2f} USD** 근처")
+            st.write(f"- 2차 분할매수(조정 시): **{entry2:.2f} USD** 이하 구간")
+            st.caption("※ 신규 진입은 1·2차로 나누어 분할 매수하는 기준입니다.")
 
         # 신규 진입 리스크·리워드 요약
         st.markdown("#### 신규 진입 관련 리스크·리워드 요약")
@@ -1581,8 +1792,8 @@ with col_main:
             up_side = (tech_tp - price) / price * 100
             down_side = (price - tech_sl) / price * 100
             st.write(f"- 위쪽 잠재 수익 여지: **+{up_side:.2f}%** (기술적 저항 기준)")
-            st.write(f"- 아래쪽 기술적 손실 여지: **-{down_side:.2f}%** (기술적 지지/손절선 기준)")
-            st.caption("※ 순수 기술적 TP/SL 기준으로 손절선 대기전의 위/아래 여유입니다.")
+            st.write(f"- 아래쪽 기술적 손실 여지: **-{down_side:.2f}%** (추세 손절/지지선 기준)")
+            st.caption("※ 순수 기술적 TP/SL 기준으로 위/아래 여유입니다. 수익률 목표는 별도로 설정.")
         else:
             st.caption("기술적 TP/SL이 애매한 위치라 리스크·리워드 요약이 어렵습니다.")
 
