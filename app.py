@@ -1704,6 +1704,7 @@ with col_main:
             # for문 끝난 뒤 session_state 변경 (← 에러 방지 핵심)
             if scan_clicked_symbol is not None:
                 st.session_state["pending_symbol"] = scan_clicked_symbol
+                st.session_state["scroll_to_result"] = True
                 st.rerun()
 
         st.markdown("---")
@@ -1796,7 +1797,6 @@ if holding_type == "신규 진입 검토" and buy_low is not None:
     if st.session_state.get("scroll_to_result", False):
         st.markdown(
             """
-            <div id="analysis_result_anchor"></div>
             <script>
             var el = document.getElementById("analysis_result_anchor");
             if (el) { el.scrollIntoView({behavior: "smooth", block: "start"}); }
@@ -1805,7 +1805,7 @@ if holding_type == "신규 진입 검토" and buy_low is not None:
             unsafe_allow_html=True,
         )
         st.session_state["scroll_to_result"] = False
-
+    st.markdown('<div id="analysis_result_anchor"></div>', unsafe_allow_html=True)
     st.subheader("🧾 요약")
 
     st.write(f"- 입력 종목: **{display_name}** → 실제 티커: **{symbol}**")
@@ -1970,5 +1970,6 @@ if holding_type == "신규 진입 검토" and buy_low is not None:
 
 if __name__ == "__main__":
     pass
+
 
 
