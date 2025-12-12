@@ -1269,6 +1269,9 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
         rsi = float(last["RSI14"])
 
         buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, 0.0, cfg)
+        if buy_low is not None:
+            sl0 = buy_low * 0.97
+            sl1 = buy_low * 0.94
         if buy_low is None or buy_high is None:
             continue
 
@@ -1967,4 +1970,5 @@ if holding_type == "신규 진입 검토" and buy_low is not None:
 
 if __name__ == "__main__":
     pass
+
 
