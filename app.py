@@ -19,7 +19,7 @@ st.set_page_config(
 st.markdown(
     """
 <style>
-@import url('https://cdn.jsdelivr/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 
 html, body, [data-testid="stAppViewContainer"] {
     font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
@@ -189,6 +189,60 @@ p, label, span, div {
     color: #b91c1c;
     font-size: 0.78rem;
     font-weight: 600;
+}
+
+/* ===== Expander 헤더(미국 시장 실시간 흐름) 스타일 ===== */
+[data-testid="stExpander"] > details {
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+    overflow: hidden;
+}
+
+/* 헤더 배경은 약간 진한 회색 톤으로 (본문 배경과 구분) */
+[data-testid="stExpander"] > details > summary {
+    background: #f3f4f6;
+    color: #111827 !important;
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+/* 헤더 호버 시 약간만 진하게 */
+[data-testid="stExpander"] > details > summary:hover {
+    background: #e5e7eb;
+}
+
+/* 화살표 아이콘 색 */
+[data-testid="stExpander"] svg {
+    color: #111827 !important;
+    fill: #111827 !important;
+}
+
+/* ===== 폼 라벨 / 입력 텍스트 진하게 보이도록 강제 ===== */
+
+/* 위젯 라벨(보유 상태, 투자 모드 선택 등) */
+[data-testid="stWidgetLabel"] p,
+[data-testid="stWidgetLabel"] label {
+    color: #111827 !important;
+    font-weight: 600 !important;
+}
+
+/* 텍스트/숫자 입력 값 */
+.stTextInput input,
+.stNumberInput input {
+    color: #111827 !important;
+}
+
+/* 선택박스(모드 선택) 안의 텍스트 */
+[data-baseweb="select"] span {
+    color: #111827 !important;
+}
+
+/* 라디오(보유 중 / 신규 진입 검토) 텍스트 */
+[data-baseweb="radio"] label p {
+    color: #111827 !important;
+    font-weight: 500 !important;
 }
 
 /* 입력 박스 (흰색 + 둥근테두리) */
@@ -797,11 +851,6 @@ def get_mode_config(mode_name: str):
 
 
 def make_signal(row, avg_price, cfg, fgi=None):
-    """
-    기본 구조는 유지하되, '관망'이 자주 나올 때는
-    별도 설명 함수(explain_neutral_signal)에서 세부 사유를 풀어준다.
-    (수익률은 보조 정보로만 사용하고, 핵심은 차트/지표 기반)
-    """
     price = float(row["Close"])
     bbl = float(row["BBL"])
     bbu = float(row["BBU"])
@@ -827,7 +876,6 @@ def make_signal(row, avg_price, cfg, fgi=None):
     mild_overbought = (price > ma20 and (k > 70 or rsi > 60))
     strong_oversold = (price < bbl and k < 20 and d < 20 and rsi < 35)
 
-    # --- 신규 진입 관점 (avg_price <= 0) ---
     if avg_price <= 0:
         if fear and price < bbl * 1.02 and k < 30 and rsi < 45:
             return "초기 매수 관심 (공포 국면)"
@@ -838,16 +886,14 @@ def make_signal(row, avg_price, cfg, fgi=None):
         else:
             return "관망 (신규 진입 관점)"
 
-    # --- 보유자 관점 ---
-    base_buy_cond = (strong_oversold)
-    if fear and price < bbl * 1.02 and k < 30 and rsi < 45:
+    base_buy_cond = (strong_oversold and profit_pct > -stop_loss_pct)
+    if fear and price < bbl * 1.02 and k < 30 and rsi < 45 and profit_pct > -stop_loss_pct * 1.2:
         return "분할매수 (공포 국면)"
-    elif greed and price < bbl * 0.98 and k < 15 and rsi < 30:
+    elif greed and price < bbl * 0.98 and k < 15 and rsi < 30 and profit_pct > -stop_loss_pct:
         return "분할매수"
     elif base_buy_cond:
         return "분할매수"
 
-    # 합리적 물타기 (손실폭 + 과매도 동시)
     loss_pct = -profit_pct if avg_price > 0 else 0.0
     lower_bound = stop_loss_pct
     upper_bound = stop_loss_pct + 10
@@ -868,7 +914,6 @@ def make_signal(row, avg_price, cfg, fgi=None):
     if rational_loss and rational_oversold:
         return "합리적 물타기 분할매수"
 
-    # 목표 수익 도달 (수익률은 참고용)
     hit_target = (profit_pct >= take_profit_pct)
     if hit_target and (strong_overbought or (greed and mild_overbought)):
         return "강한 부분매도 (수익+과열)"
@@ -877,7 +922,6 @@ def make_signal(row, avg_price, cfg, fgi=None):
     if strong_overbought or (greed and mild_overbought):
         return "위험주의 (지표 과열 대비 수익 낮음)"
 
-    # 강한 손실 구간
     if profit_pct <= -stop_loss_pct:
         return "손절 or 비중축소 고려"
 
@@ -1090,7 +1134,7 @@ def get_intraday_5m_score(df_5m: pd.DataFrame):
     else:
         comment = "장중 매도 우위 또는 관망 권장"
 
-    return score, comment + " / " + " · ".join(details)
+    return score, comment + " · " + " · ".join(details)
 
 
 def build_risk_alerts(market_score, last_row, gap_pct, atr14, price_move_abs):
@@ -1117,147 +1161,6 @@ def build_risk_alerts(market_score, last_row, gap_pct, atr14, price_move_abs):
         alerts.append("✅ 특별한 리스크 경고 없음 (기본적인 기술적/시장 환경)")
 
     return alerts
-
-
-def explain_neutral_signal(signal: str, last_row, holding_type: str, avg_price: float, cfg: dict):
-    """
-    '관망'이 나올 때, 좀 더 구체적으로 왜 관망인지 설명해 주는 용도.
-    """
-    if not signal.startswith("관망"):
-        return None
-
-    price = float(last_row["Close"])
-    ma20 = float(last_row["MA20"])
-    bbl = float(last_row["BBL"])
-    bbu = float(last_row["BBU"])
-    rsi = float(last_row["RSI14"])
-    k = float(last_row["STOCH_K"])
-    d = float(last_row["STOCH_D"])
-
-    # 신규 진입 관점
-    if holding_type == "신규 진입 검토" or avg_price <= 0:
-        if rsi >= 65 or price >= bbu * 0.995:
-            return "단기 과열 구간에 가까워 고점 매수 리스크가 큰 구간입니다. 눌림(조정) 후 진입이 더 유리한 자리로 보입니다."
-        if price > ma20 and price > ma20 * 1.03:
-            return "상승 추세는 유지 중이지만, 20일선 대비 위쪽에서 추격 매수 구간에 가까워 보입니다. MA20 근처 눌림이나 조정 구간 대기가 유리합니다."
-        if price < ma20 and price > bbl * 1.03:
-            return "단기 조정이 진행 중인 구간으로, 뚜렷한 지지선(볼린저 하단·최근 저점) 근처까지 기다렸다 진입하는 편이 더 안전해 보입니다."
-        return "박스권·추세 전환 구간에 가까워 방향성이 명확하지 않습니다. 지지선/저항선 돌파 여부나 거래량 동반 움직임을 확인한 뒤 진입을 검토하는 것이 좋습니다."
-
-    # 보유자 관점
-    if holding_type == "보유 중" and avg_price > 0:
-        if price > ma20 and 40 <= rsi <= 65:
-            return "우상향 추세는 유지되고 있으나 과열도·과매도도 아닌 중립 구간입니다. 추가 매수/매도보다는 기존 비중 유지(Hold) 관점이 합리적인 구간으로 보입니다."
-        if price < ma20 and rsi < 45:
-            return "단기 추세가 다소 약해진 구간입니다. 추세선 이탈 여부와 주요 지지 가격대(최근 저점/볼린저 하단) 근처에서 비중 조절 또는 손절 기준을 재점검하는 것이 좋습니다."
-        if abs(price - ma20) / ma20 < 0.01 and 45 <= rsi <= 60:
-            return "20일선 근처에서 힘겨루기(박스권)를 하는 구간입니다. 위·아래 방향이 아직 확실치 않아, 명확한 돌파/이탈 신호 전까지는 관망이 더 유리해 보입니다."
-        return "추세·모멘텀 모두 애매한 구간으로, 성급한 추가 매수/손절보다는 미리 정해둔 손절선·익절선만 유지하며 흐름을 관찰하는 것이 좋습니다."
-
-    return None
-
-# =====================================
-# 간단 신규 진입 스캐너 (A안: 단순 + 진입/손절 안정화)
-# =====================================
-def scan_new_entry_candidates(mode_name: str):
-    """
-    POPULAR_SYMBOLS 기준으로만 가볍게 훑는 신규 진입 스캐너.
-    - 단순 로직 유지
-    - 진입구간과 손절구간이 항상: 손절 < 진입 하단 < 진입 상단 구조가 되도록 안정화
-    """
-    cfg = get_mode_config(mode_name)
-    results = []
-
-    for sym in POPULAR_SYMBOLS:
-        df = get_price_data(sym, cfg["period"])
-        if df.empty or len(df) < 40:
-            continue
-
-        df = add_indicators(df)
-        last = df.iloc[-1]
-        price = float(last["Close"])
-
-        tech_tp, tech_sl = calc_technical_tp_sl(df)
-        if tech_tp is None or tech_sl is None:
-            continue
-
-        rr = calc_rr_ratio(price, tech_tp, tech_sl)
-        if rr is None or rr < 1.5:
-            # 손익비가 너무 안 좋으면 스킵
-            continue
-
-        # 단순 추세 필터 (상승/중립 위주만)
-        ma20 = float(last["MA20"])
-        ma50 = float(last["MA50"])
-        if not (price >= ma20 or ma20 >= ma50):
-            # 완전 하락 추세는 제외
-            continue
-
-        # --- 진입구간: 현재가 기준 좁은 박스 ---
-        # 가격이 지지선 근처면: 눌림목 진입
-        recent = df.tail(20)
-        recent_low = float(recent["Close"].min())
-        bbl = float(last["BBL"])
-
-        # 기본 진입 중앙은 현재가
-        entry_mid = price
-
-        # 눌림형: 현재가가 MA20 아래쪽/지지 근처면 하단 쪽에 몰게
-        if price < ma20 and price > bbl:
-            entry_low = max(price * 0.985, recent_low * 1.01, bbl * 1.01)
-            entry_high = price * 1.01
-        else:
-            # 일반형: 현재가 ±1%
-            entry_low = price * 0.99
-            entry_high = price * 1.01
-
-        # 상단이 기술적 목표보다 너무 높지 않게 제한
-        if tech_tp is not None:
-            entry_high = min(entry_high, tech_tp * 0.97)
-
-        # 혹시라도 뒤집힌 경우를 방지
-        if entry_high <= entry_low:
-            entry_low = price * 0.99
-            entry_high = price * 1.01
-            if tech_tp is not None and entry_high >= tech_tp:
-                entry_high = tech_tp * 0.97
-                entry_low = entry_high * 0.98
-
-        # --- 손절: 항상 진입 하단보다 아래 ---
-        if tech_sl is not None:
-            stop = min(tech_sl, entry_low * 0.985)
-        else:
-            stop = entry_low * 0.985
-
-        if stop >= entry_low:
-            stop = entry_low * 0.985
-
-        # 다시 손익비 체크 (안정화된 손절 기준으로)
-        rr2 = calc_rr_ratio(price, tech_tp, stop)
-        if rr2 is None or rr2 < 1.3:
-            continue
-
-        rsi = float(last["RSI14"])
-        bias = short_term_bias(last)
-
-        results.append(
-            {
-                "symbol": sym,
-                "price": price,
-                "rsi": rsi,
-                "bias": bias,
-                "entry_low": entry_low,
-                "entry_high": entry_high,
-                "tp": tech_tp,
-                "sl": stop,
-                "rr": rr2,
-            }
-        )
-
-    # 손익비 높은 순으로 정렬
-    results_sorted = sorted(results, key=lambda x: x["rr"], reverse=True)
-    return results_sorted
-
 
 # =====================================
 # 세션 상태
@@ -1351,12 +1254,12 @@ with col_main:
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            last_v = nas.get("last")
+            last = nas.get("last")
             chg = nas.get("chg_pct")
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
             st.markdown('<div class="metric-label">나스닥 선물</div>', unsafe_allow_html=True)
-            if last_v is not None:
-                st.markdown(f'<div class="metric-value">{last_v:.1f}</div>', unsafe_allow_html=True)
+            if last is not None:
+                st.markdown(f'<div class="metric-value">{last:.1f}</div>', unsafe_allow_html=True)
             else:
                 st.markdown('<div class="metric-value">N/A</div>', unsafe_allow_html=True)
             if chg is not None:
@@ -1367,12 +1270,12 @@ with col_main:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with col2:
-            last_v = es.get("last")
+            last = es.get("last")
             chg = es.get("chg_pct")
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
             st.markdown('<div class="metric-label">S&P500 선물</div>', unsafe_allow_html=True)
-            if last_v is not None:
-                st.markdown(f'<div class="metric-value">{last_v:.1f}</div>', unsafe_allow_html=True)
+            if last is not None:
+                st.markdown(f'<div class="metric-value">{last:.1f}</div>', unsafe_allow_html=True)
             else:
                 st.markdown('<div class="metric-value">N/A</div>', unsafe_allow_html=True)
             if chg is not None:
@@ -1468,9 +1371,6 @@ with col_main:
         st.markdown("---")
 
         # BIG TECH LAYER
-        bigtech_layer = ov.get("bigtech", {})
-        sector_layer = ov.get("sector", {})
-
         bt_score = bigtech_layer.get("score", 0)
         bt_items = bigtech_layer.get("items", [])
         st.markdown('<div class="card-soft">', unsafe_allow_html=True)
@@ -1669,7 +1569,7 @@ with col_main:
 <div class="card-soft-sm">
   <div class="small-muted">MODE</div>
   <div style="font-size:1.05rem;font-weight:600;">{cfg['name']} 모드</div>
-  <div class="small-muted">차트 기간: {cfg['period']} · 손절/익절: 추세·지지/저항 + 보조 % 기준</div>
+  <div class="small-muted">차트 기간: {cfg['period']} · 손절: -{cfg['stop_loss_pct']}% · 익절: +{cfg['take_profit_pct']}%</div>
 </div>
 """,
             unsafe_allow_html=True,
@@ -1680,15 +1580,16 @@ with col_main:
 <div class="card-soft-sm">
   <div class="small-muted">POSITION</div>
   <div>보유 상태: <b>{holding_type}</b></div>
-  <div class="small-muted">평단/수익률은 보유중일 때만 계산됩니다. (판단은 차트·지표 위주)</div>
+  <div class="small-muted">평단/수익률은 보유중일 때만 계산됩니다.</div>
 </div>
 """,
             unsafe_allow_html=True,
         )
 
+    # 수익률은 ‘표시만’ 하고, 판단 로직에서는 사용 안 함
     if holding_type == "보유 중" and avg_price > 0:
         st.write(f"- 평단가: **{avg_price:.2f} USD**")
-        st.write(f"- 수익률: **{profit_pct:.2f}%**")
+        st.write(f"- 수익률(참고용): **{profit_pct:.2f}%**")
     if holding_type == "보유 중" and shares > 0 and avg_price > 0:
         rate = get_usdkrw_rate()
         cost_factor = 1 - commission_pct / 100
@@ -1704,10 +1605,6 @@ with col_main:
     with col_sig1:
         st.write(f"**추천 액션:** ⭐ {signal} ⭐")
         st.write(f"**단기 방향성:** {bias_comment}")
-        # 관망 세부 사유
-        neutral_reason = explain_neutral_signal(signal, last, holding_type, eff_avg_price, cfg)
-        if neutral_reason:
-            st.caption("관망 세부 사유: " + neutral_reason)
     with col_sig2:
         if rr is not None:
             st.metric("손익비 (기술적 TP/SL 기준)", f"{rr:.2f} : 1")
@@ -1716,16 +1613,16 @@ with col_main:
             elif rr <= 1.0:
                 st.caption("⚠ 손익비 좋지 않음 (기술적으로 손절 폭이 더 큼)")
         else:
-            st.caption("손익비 계산 불가 (기술적 TP/SL 기준이 애매한 위치)")
+            st.caption("손익비 계산 불가 (기술적 TP/SL 기준이 불안정한 위치)")
 
     st.subheader("📌 가격 레벨 (진입/익절/손절 가이드)")
     if holding_type == "보유 중":
-        st.write(f"- 매수/추가매수 구간(참고): **{buy_low:.2f} ~ {buy_high:.2f} USD**")
-        st.write(f"- 0차 매도 추천가(가벼운 익절/비중조절): **{tp0:.2f} USD**")
-        st.write(f"- 1차 매도 추천가(주요 익절 레벨): **{tp1:.2f} USD**")
-        st.write(f"- 2차 매도 추천가(강한 저항/상단): **{tp2:.2f} USD**")
-        st.write(f"- 0차 손절가(기본 추세 손절선): **{sl0:.2f} USD**")
-        st.write(f"- 1차 손절가(최종 방어선·깊은 조정): **{sl1:.2f} USD**")
+        st.write(f"- 매수/추가매수 구간: **{buy_low:.2f} ~ {buy_high:.2f} USD**")
+        st.write(f"- 0차 매도 추천가: **{tp0:.2f} USD**")
+        st.write(f"- 1차 매도 추천가: **{tp1:.2f} USD**")
+        st.write(f"- 2차 매도 추천가: **{tp2:.2f} USD**")
+        st.write(f"- 0차 손절가(추세 기준): **{sl0:.2f} USD**")
+        st.write(f"- 1차 손절가(최종 방어선): **{sl1:.2f} USD**")
     else:
         entry1 = min(buy_high, buy_low * 1.03)
         entry2 = buy_low
@@ -1733,13 +1630,12 @@ with col_main:
         st.write(f"- 2차 분할매수(조정 시): **{entry2:.2f} USD** 이하 구간")
         st.caption("※ 신규 진입은 1·2차로 나누어 분할 매수하는 기준입니다.")
 
-        # 신규 진입 리스크·리워드 요약
         st.markdown("#### 신규 진입 관련 리스크·리워드 요약")
         if tech_tp is not None and tech_sl is not None:
             up_side = (tech_tp - price) / price * 100
             down_side = (price - tech_sl) / price * 100
             st.write(f"- 위쪽 잠재 수익 여지: **+{up_side:.2f}%** (기술적 저항 기준)")
-            st.write(f"- 아래쪽 기술적 손실 여지: **-{down_side:.2f}%** (추세 손절/지지선 기준)")
+            st.write(f"- 아래쪽 기술적 손실 여지: **-{down_side:.2f}%** (기술적 지지/손절선 기준)")
             st.caption("※ 순수 기술적 TP/SL 기준으로 위/아래 여유입니다. 수익률 목표는 별도로 설정.")
         else:
             st.caption("기술적 TP/SL이 애매한 위치라 리스크·리워드 요약이 어렵습니다.")
@@ -1798,38 +1694,6 @@ with col_main:
     st.subheader("📈 가격 / 볼린저밴드 차트 (최근 약 6개월)")
     chart_df = df[["Close", "MA20", "BBL", "BBU"]].tail(120)
     st.line_chart(chart_df)
-
-    # 3) 간단 신규 진입 스캐너
-    st.markdown("---")
-    with st.expander("🎯 신규 진입 후보 스캐너 (간단 / POPULAR_SYMBOLS 기준)", expanded=False):
-        st.caption("※ 단순 스캐너입니다. 여기서 걸린 종목은 반드시 위 개별 분석 엔진으로 한 번 더 확인하세요.")
-        scan_btn = st.button("🚀 POPULAR_SYMBOLS 기준 신규 진입 후보 스캔", key="scan_btn")
-        if scan_btn:
-            with st.spinner("신규 진입 후보 종목 스캔 중..."):
-                candidates = scan_new_entry_candidates(mode_name)
-            if not candidates:
-                st.write("현재 조건에 맞는 신규 진입 후보가 없습니다.")
-            else:
-                for c in candidates:
-                    sym = c["symbol"]
-                    price_c = c["price"]
-                    rsi_c = c["rsi"]
-                    bias_c = c["bias"]
-                    e_low = c["entry_low"]
-                    e_high = c["entry_high"]
-                    tp_c = c["tp"]
-                    sl_c = c["sl"]
-                    rr_c = c["rr"]
-
-                    st.markdown(
-                        f"**{sym}** 현재가 **{price_c:.2f} USD** · RSI {rsi_c:.1f} · 단기 흐름: {bias_c}"
-                    )
-                    st.write(
-                        f"↳ 신규 진입 관심 구간: **{e_low:.2f} ~ {e_high:.2f} USD**, "
-                        f"1차 목표: **{tp_c:.2f} USD**, 추세 손절 기준: **{sl_c:.2f} USD**, "
-                        f"손익비(대략): **{rr_c:.2f} : 1**"
-                    )
-                    st.markdown("---")
 
 
 if __name__ == "__main__":
