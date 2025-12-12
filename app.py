@@ -8,240 +8,240 @@ import requests
 # 페이지 설정
 # =====================================
 st.set_page_config(
-    page_title="내 주식 자동판독기 (시장 개요 + 실전 보조지표)",
+    page_title="내 주식 자동판독기 (시장 개요 + 레이어/갭/ATR/장중 흐름)",
     page_icon="📈",
     layout="wide",
 )
 
 # =====================================
-# CSS: 라이트 테마 + PC/모바일 공통 가독성
+# 전체 스타일 (화이트 + 프로 느낌, PC/모바일 공통)
 # =====================================
 st.markdown(
     """
 <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 
-/* 전체 폰트 */
-* {
+html, body, [data-testid="stAppViewContainer"] {
     font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-}
-
-/* 앱 배경: 연한 그라데이션 */
-[data-testid="stAppViewContainer"] {
-    background: radial-gradient(circle at top left, #e0e7ff 0, #f9fafb 40%, #ecfeff 100%);
-}
-
-/* 메인 컨테이너 */
-main.block-container {
-    padding-top: 1.3rem;
-    padding-bottom: 2rem;
-    max-width: 1350px;
-    background-color: transparent;
-}
-
-/* 헤더/사이드바 */
-header, [data-testid="stHeader"] {
-    background-color: #ffffff !important;
-    box-shadow: 0 2px 4px rgba(15, 23, 42, 0.05);
-}
-[data-testid="stSidebar"] {
-    background-color: rgba(255,255,255,0.9) !important;
-}
-
-/* 헤더 글씨 */
-h1 {
-    color: #0f172a !important;
-    font-size: 1.6rem !important;
-    font-weight: 600 !important;
-}
-h2 {
-    color: #0f172a !important;
-    font-size: 1.25rem !important;
-    font-weight: 600 !important;
-}
-h3 {
-    color: #111827 !important;
-    font-size: 1.05rem !important;
-    font-weight: 600 !important;
-}
-h4 {
-    color: #111827 !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-}
-
-/* 기본 텍스트 */
-p, span, li, label {
     color: #111827;
 }
 
-/* 구분선 */
-hr {
-    margin-top: 1rem;
-    margin-bottom: 1rem;
-    border: 0;
-    border-top: 1px solid #e5e7eb;
+/* 전체 배경: 옅은 그라데이션 */
+[data-testid="stAppViewContainer"] {
+    background: linear-gradient(135deg, #f4f7ff 0%, #eefdfd 50%, #fdfcfb 100%);
 }
 
-/* 카드 – 메인 정보 */
-.card {
-    background: #ffffff;
-    border-radius: 16px;
-    padding: 14px 18px;
-    border: 1px solid #e5e7eb;
-    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+/* 메인 컨테이너 폭 */
+main.block-container {
+    max-width: 1250px;
+    padding-top: 1.2rem;
+    padding-bottom: 2rem;
 }
-.card-title {
-    font-size: 0.8rem;
-    color: #6b7280 !important;
-    margin-bottom: 6px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+
+/* 헤더/사이드바는 흰색 */
+header, [data-testid="stHeader"], [data-testid="stSidebar"] {
+    background-color: #ffffff !important;
 }
-.card-value {
-    font-size: 1.45rem;
+
+/* 제목들 */
+h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #111827;
+}
+h2 {
+    font-size: 1.25rem;
     font-weight: 600;
-    color: #0f172a !important;
-    margin-bottom: 4px;
+    color: #111827;
 }
-.card-sub {
-    font-size: 0.88rem;
-    color: #4b5563 !important;
-}
-
-/* 작은 카드 – 레이어/보조 정보 */
-.card-small {
-    background: rgba(255,255,255,0.96);
-    border-radius: 14px;
-    padding: 10px 14px;
-    border: 1px solid #e5e7eb;
-    box-shadow: 0 6px 15px rgba(15, 23, 42, 0.06);
+h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #111827;
 }
 
-/* 레이어 줄 */
-.layer-line {
-    font-size: 0.9rem;
-    line-height: 1.4;
-    margin-bottom: 4px;
+/* 기본 텍스트 */
+p, label, span, div {
+    font-size: 0.94rem;
 }
 
-/* Expander */
-details {
-    border-radius: 18px !important;
-    border: 1px solid #e5e7eb !important;
-    background-color: rgba(255,255,255,0.96) !important;
-    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.09);
-}
-
-/* metric 카드 */
-[data-testid="metric-container"] {
-    background-color: #ffffff;
-    border-radius: 14px;
-    padding: 10px 14px;
-    border: 1px solid #e5e7eb;
-    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
-}
-[data-testid="stMetricLabel"] {
-    color: #6b7280 !important;
-}
-[data-testid="stMetricValue"] {
-    color: #0f172a !important;
-}
-
-/* 버튼 */
-.stButton>button {
-    border-radius: 999px;
-    padding: 6px 18px;
-    font-size: 0.9rem;
-    border: 1px solid #d1d5db;
-    background: linear-gradient(135deg, #eff6ff 0, #ffffff 60%);
-    color: #0f172a !important;
-}
-.stButton>button:hover {
-    border-color: #38bdf8;
-    box-shadow: 0 4px 10px rgba(56, 189, 248, 0.35);
-}
-
-/* 입력 박스 – 모바일에서도 하얀 바 + 검은 글자 */
-[data-baseweb="input"] > div {
-    background-color: #ffffff !important;
-    border-radius: 999px !important;
-    border: 1px solid #d1d5db;
-}
-[data-baseweb="input"] input {
-    background-color: transparent !important;
-    color: #111827 !important;
-}
-textarea {
-    background-color: #ffffff !important;
-    color: #111827 !important;
-}
-input::placeholder, textarea::placeholder {
-    color: #9ca3af !important;
-}
-
-/* selectbox / radio */
-[data-baseweb="select"] > div {
-    background-color: #ffffff !important;
-}
-[data-baseweb="radio"] label {
-    background-color: transparent !important;
-}
-
-/* 탭 헤더 */
-[data-baseweb="tab-list"] {
-    background-color: rgba(255,255,255,0.8);
-    border-radius: 999px;
-    padding: 4px;
-    border: 1px solid #e5e7eb;
-}
-[data-baseweb="tab"] {
-    border-radius: 999px !important;
-}
-
-/* 표/데이터프레임 */
-[data-testid="stDataFrame"], [data-testid="stTable"] {
-    background-color: #ffffff;
-}
-
-/* 캡션/작은 글씨 */
+/* 얇은 캡션 */
 .small-muted {
     font-size: 0.8rem;
     color: #6b7280 !important;
 }
 
-/* 레이어 점수용 뱃지 */
-.badge {
-    display: inline-block;
-    padding: 5px 12px;
+/* 공통 카드 (흰색 카드) */
+.card-soft {
+    background: rgba(255, 255, 255, 0.96);
+    border-radius: 20px;
+    padding: 14px 18px;
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+    border: 1px solid #e5e7eb;
+    margin-bottom: 12px;
+}
+
+/* 작은 카드 */
+.card-soft-sm {
+    background: rgba(255, 255, 255, 0.96);
+    border-radius: 18px;
+    padding: 10px 14px;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+    border: 1px solid #e5e7eb;
+}
+
+/* 칩 (점수 배지) */
+.chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
     border-radius: 999px;
-    font-size: 0.9rem;
+    font-size: 0.84rem;
     font-weight: 600;
-    background-color: #dcfce7;
+}
+.chip-green {
+    background: #bbf7d0;
     color: #166534;
 }
-
-/* 섹터 뱃지 */
-.badge-sector {
-    background-color: #e0f2fe;
-    color: #075985;
-}
-
-/* 상승/하락 텍스트 색상 */
-.pos-text {
-    color: #b91c1c;
-}
-.neg-text {
+.chip-blue {
+    background: #dbeafe;
     color: #1d4ed8;
 }
-.neu-text {
-    color: #111827;
+.chip-red {
+    background: #fee2e2;
+    color: #b91c1c;
 }
 
-/* 오른쪽 즐겨찾기/최근 버튼 */
-.sidebar-button {
-    width: 100%;
-    text-align: left;
+/* BIG TECH / SECTOR 레이어 제목(영문) */
+.layer-title-en {
+    font-size: 0.85rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #6b7280;
+    margin-bottom: 4px;
+}
+
+/* BIG TECH / SECTOR 레이어 행 */
+.layer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 4px;
+}
+.layer-symbol {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #111827;
+}
+.layer-chg-pos {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #dc2626; /* 빨강 */
+}
+.layer-chg-neg {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #2563eb; /* 파랑 */
+}
+.layer-chg-flat {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #4b5563;
+}
+
+/* 미국 시장 실시간 흐름 안의 metric 카드 */
+.metric-card {
+    background: rgba(255, 255, 255, 0.96);
+    border-radius: 20px;
+    padding: 12px 16px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+    margin-bottom: 8px;
+}
+.metric-label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #6b7280;
+}
+.metric-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-top: 4px;
+}
+.metric-delta-pos {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #bbf7d0;
+    color: #166534;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+.metric-delta-neg {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+/* 입력 박스 (흰색 + 둥근테두리) */
+[data-baseweb="input"] > div,
+[data-baseweb="select"] > div {
+    background-color: #ffffff !important;
+    border-radius: 999px !important;
+    border: 1px solid #e5e7eb !important;
+}
+[data-baseweb="input"] input,
+textarea {
+    background-color: transparent !important;
+    color: #111827 !important;
+}
+textarea {
+    border-radius: 16px !important;
+}
+input::placeholder, textarea::placeholder {
+    color: #9ca3af !important;
+}
+
+/* radio */
+[data-baseweb="radio"] > label {
+    background-color: transparent !important;
+}
+
+/* 버튼 */
+.stButton>button {
+    border-radius: 999px;
+    padding: 6px 16px;
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    font-size: 0.92rem;
+    font-weight: 500;
+}
+.stButton>button:hover {
+    border-color: #4f46e5;
+    background: #eef2ff;
+}
+
+/* 데이터프레임 영역 */
+[data-testid="stDataFrame"], [data-testid="stTable"] {
+    background-color: #ffffff;
+}
+
+/* 모바일(좁은 화면)에서 살짝 폰트 키우기 */
+@media (max-width: 768px) {
+    .metric-value {
+        font-size: 1.4rem;
+    }
+    .layer-symbol, .layer-chg-pos, .layer-chg-neg, .layer-chg-flat {
+        font-size: 1.0rem;
+    }
 }
 </style>
 """,
@@ -332,38 +332,12 @@ POPULAR_SYMBOLS = [
     "ORCL", "PYPL", "NFLX", "PLTR", "AVGO",
 ]
 
-# 빅테크/섹터 레이어용 리스트
-BIG_TECH = ["NVDA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "TSLA"]
-SECTOR_ETFS = {
-    "기술주 (XLK)": "XLK",
-    "반도체 (SOXX)": "SOXX",
-    "금융 (XLF)": "XLF",
-    "헬스케어 (XLV)": "XLV",
-    "에너지 (XLE)": "XLE",
-    "커뮤니케이션 (XLC)": "XLC",
-}
-
 
 def normalize_symbol(user_input: str) -> str:
     name = user_input.strip()
     if name in KOREAN_TICKER_MAP:
         return KOREAN_TICKER_MAP[name]
     return name.replace(" ", "").upper()
-
-
-# =====================================
-# 상승/하락 퍼센트 HTML 포맷 (색 분리)
-# =====================================
-def format_change_html(chg: float | None) -> str:
-    if chg is None:
-        return '<span class="neu-text">-</span>'
-    if chg > 0:
-        return f'<span class="pos-text">+{chg:.2f}%</span>'
-    elif chg < 0:
-        return f'<span class="neg-text">{chg:.2f}%</span>'
-    else:
-        return f'<span class="neu-text">{chg:.2f}%</span>'
-
 
 # =====================================
 # 외부 지표 함수들
@@ -406,9 +380,6 @@ def get_last_extended_price(symbol: str):
         return None
 
 
-# =====================================
-# 미국 시장 개요
-# =====================================
 def safe_last_change_info(ticker_str: str):
     try:
         info = yf.Ticker(ticker_str).info
@@ -445,14 +416,12 @@ def get_etf_price_with_prepost(symbol: str, name: str):
             chg_pct = info.get("preMarketChangePercent")
             if chg_pct is None and prev_close not in (None, 0, 0.0):
                 chg_pct = (pre - prev_close) / prev_close * 100
-
         elif market_state == "POST" and post is not None:
             current = post
             basis = "애프터장 기준"
             chg_pct = info.get("postMarketChangePercent")
             if chg_pct is None and prev_close not in (None, 0, 0.0):
                 chg_pct = (post - prev_close) / prev_close * 100
-
         elif regular is not None:
             current = regular
             basis = "정규장 기준"
@@ -480,6 +449,27 @@ def get_etf_price_with_prepost(symbol: str, name: str):
             "chg_pct": None,
             "market_state": "",
         }
+
+
+# BIG TECH / SECTOR 레이어용
+BIGTECH_LIST = [
+    ("NVDA", "NVDA"),
+    ("AAPL", "AAPL"),
+    ("MSFT", "MSFT"),
+    ("AMZN", "AMZN"),
+    ("META", "META"),
+    ("GOOGL", "GOOGL"),
+    ("TSLA", "TSLA"),
+]
+
+SECTOR_ETF_LIST = [
+    ("기술주 (XLK)", "XLK"),
+    ("반도체 (SOXX)", "SOXX"),
+    ("금융 (XLF)", "XLF"),
+    ("헬스케어 (XLV)", "XLV"),
+    ("에너지 (XLE)", "XLE"),
+    ("커뮤니케이션 (XLC)", "XLC"),
+]
 
 
 @st.cache_data(ttl=60)
@@ -521,49 +511,35 @@ def get_us_market_overview():
     ]
     overview["etfs"] = etfs
 
+    # FGI
     overview["fgi"] = fetch_fgi()
 
-    return overview
-
-
-@st.cache_data(ttl=60)
-def get_bigtech_overview():
-    data = []
-    score = 0
-    for s in BIG_TECH:
-        last, chg, _ = safe_last_change_info(s)
-        if last is None or chg is None:
-            continue
-        data.append({"symbol": s, "chg": chg})
-        if chg >= 2:
-            score += 2
-        elif chg >= 0.5:
-            score += 1
-        elif chg <= -2:
-            score -= 2
-        elif chg <= -0.5:
-            score -= 1
-    if not data:
-        return None, []
-    return score, data
-
-
-@st.cache_data(ttl=60)
-def get_sector_overview():
-    rows = []
-    score = 0
-    for name, sym in SECTOR_ETFS.items():
+    # BIG TECH / SECTOR 레이어
+    bigtech = []
+    score_bt = 0
+    for sym, label in BIGTECH_LIST:
         last, chg, _ = safe_last_change_info(sym)
-        if last is None or chg is None:
-            continue
-        rows.append({"name": name, "symbol": sym, "chg": chg})
-        if chg >= 1:
-            score += 1
-        elif chg <= -1:
-            score -= 1
-    if not rows:
-        return None, []
-    return score, rows
+        if chg is not None:
+            if chg >= 1:
+                score_bt += 1
+            elif chg <= -1:
+                score_bt -= 1
+        bigtech.append({"symbol": sym, "chg": chg})
+    overview["bigtech"] = {"score": score_bt, "items": bigtech}
+
+    sector = []
+    score_sec = 0
+    for label, sym in SECTOR_ETF_LIST:
+        last, chg, _ = safe_last_change_info(sym)
+        if chg is not None:
+            if chg >= 0.8:
+                score_sec += 1
+            elif chg <= -0.8:
+                score_sec -= 1
+        sector.append({"label": label, "symbol": sym, "chg": chg})
+    overview["sector"] = {"score": score_sec, "items": sector}
+
+    return overview
 
 
 def compute_market_score(overview: dict):
@@ -643,7 +619,6 @@ def compute_market_score(overview: dict):
     detail_text = " · ".join(details)
     return score, label, detail_text
 
-
 # =====================================
 # 가격 데이터 + 지표
 # =====================================
@@ -712,7 +687,9 @@ def get_intraday_5m(symbol: str):
     except Exception:
         return pd.DataFrame()
 
-
+# =====================================
+# 코멘트 함수들
+# =====================================
 def comment_rsi(rsi):
     if rsi < 30:
         return "강한 과매도"
@@ -806,7 +783,6 @@ def short_term_bias(last_row):
         return "단기 하방 우세 (며칠 내 조정/하락 압력이 큼)"
     else:
         return "단기 중립~혼조 (방향성이 뚜렷하지 않음)"
-
 
 # =====================================
 # 매매 신호 / 레벨 등
@@ -1132,7 +1108,6 @@ def build_risk_alerts(market_score, last_row, gap_pct, atr14, price_move_abs):
 
     return alerts
 
-
 # =====================================
 # 세션 상태
 # =====================================
@@ -1150,7 +1125,6 @@ if "run_from_side" not in st.session_state:
 
 if "symbol_input" not in st.session_state:
     st.session_state["symbol_input"] = st.session_state["selected_symbol"]
-
 
 # =====================================
 # 레이아웃: 메인 + 사이드
@@ -1197,32 +1171,29 @@ with col_side:
         st.session_state["symbol_input"] = clicked_symbol
         st.session_state["run_from_side"] = True
 
-
 # ---- 왼쪽: 메인 ----
 with col_main:
     st.title("📈 내 주식 자동판독기")
     st.caption("시장 개요 + 개별 종목 판독 + 레이어/갭/ATR/장중 흐름까지 한 화면에서 확인")
 
-    # 1) 미국 시장 개요
-    with st.expander("🌍 미국 시장 실시간 흐름 (보조지표 레이어)", expanded=True):
+    # 1) 미국 시장 개요 + 레이어
+    with st.expander("🌍 미국 시장 실시간 흐름 (보조지표 + 레이어)", expanded=True):
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
             refresh = st.button("🔄 새로고침", key="refresh_overview")
         if refresh:
             get_us_market_overview.clear()
-            get_bigtech_overview.clear()
-            get_sector_overview.clear()
 
-        with st.spinner("미국 선물 · 금리 · 달러 · ETF · 빅테크 · 섹터 상황 불러오는 중..."):
+        with st.spinner("미국 선물 · 금리 · 달러 · ETF · 레이어 상황 불러오는 중..."):
             ov = get_us_market_overview()
-            bt_score, bt_data = get_bigtech_overview()
-            sec_score, sec_data = get_sector_overview()
 
         score_mkt, label_mkt, detail_mkt = compute_market_score(ov)
 
         fut = ov.get("futures", {})
         rf = ov.get("rates_fx", {})
         etfs = ov.get("etfs", [])
+        bigtech_layer = ov.get("bigtech", {})
+        sector_layer = ov.get("sector", {})
 
         nas = fut.get("nasdaq", {})
         es = fut.get("sp500", {})
@@ -1231,55 +1202,89 @@ with col_main:
         with col1:
             last = nas.get("last")
             chg = nas.get("chg_pct")
-            if last is not None and chg is not None:
-                st.metric("나스닥 선물", f"{last:.1f}", f"{chg:.2f}%")
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown('<div class="metric-label">나스닥 선물</div>', unsafe_allow_html=True)
+            if last is not None:
+                st.markdown(f'<div class="metric-value">{last:.1f}</div>', unsafe_allow_html=True)
             else:
-                st.metric("나스닥 선물", "N/A", "-")
+                st.markdown('<div class="metric-value">N/A</div>', unsafe_allow_html=True)
+            if chg is not None:
+                if chg >= 0:
+                    st.markdown(f'<div class="metric-delta-pos">↑ {chg:.2f}%</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="metric-delta-neg">↓ {abs(chg):.2f}%</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
         with col2:
             last = es.get("last")
             chg = es.get("chg_pct")
-            if last is not None and chg is not None:
-                st.metric("S&P500 선물", f"{last:.1f}", f"{chg:.2f}%")
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown('<div class="metric-label">S&P500 선물</div>', unsafe_allow_html=True)
+            if last is not None:
+                st.markdown(f'<div class="metric-value">{last:.1f}</div>', unsafe_allow_html=True)
             else:
-                st.metric("S&P500 선물", "N/A", "-")
+                st.markdown('<div class="metric-value">N/A</div>', unsafe_allow_html=True)
+            if chg is not None:
+                if chg >= 0:
+                    st.markdown(f'<div class="metric-delta-pos">↑ {chg:.2f}%</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="metric-delta-neg">↓ {abs(chg):.2f}%</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
         with col3:
-            st.metric("시장 점수", f"{score_mkt} / 8", label_mkt)
-            st.caption(
-                '<span class="small-muted">(범위: -8 ~ 8 | 선물·금리·달러·ETF 기준 종합)</span>',
-                unsafe_allow_html=True,
-            )
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown('<div class="metric-label">시장 점수</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-value">{score_mkt} / 8</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="small-muted">{label_mkt}</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            st.caption("※ 범위: -8 ~ 8 | 선물·금리·달러·ETF 기준 종합")
 
         if detail_mkt:
             st.caption("· " + detail_mkt)
 
-        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown("---")
 
         col4, col5, col6 = st.columns(3)
         with col4:
             us10y = rf.get("us10y")
             us10y_chg = rf.get("us10y_chg")
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown('<div class="metric-label">미 10년물</div>', unsafe_allow_html=True)
             if us10y is not None:
-                delta = f"{us10y_chg:.3f}p" if us10y_chg is not None else ""
-                st.metric("미 10년물", f"{us10y:.2f}%", delta)
+                st.markdown(f'<div class="metric-value">{us10y:.2f}%</div>', unsafe_allow_html=True)
             else:
-                st.metric("미 10년물", "N/A", "")
+                st.markdown('<div class="metric-value">N/A</div>', unsafe_allow_html=True)
+            if us10y_chg is not None:
+                if us10y_chg >= 0:
+                    st.markdown(f'<div class="metric-delta-pos">▲ {us10y_chg:.3f}p</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="metric-delta-neg">▼ {abs(us10y_chg):.3f}p</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
         with col5:
             dxy = rf.get("dxy")
             dxy_chg = rf.get("dxy_chg")
-            if dxy is not None and dxy_chg is not None:
-                st.metric("달러 인덱스 (DXY)", f"{dxy:.2f}", f"{dxy_chg:.2f}%")
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown('<div class="metric-label">달러 인덱스 (DXY)</div>', unsafe_allow_html=True)
+            if dxy is not None:
+                st.markdown(f'<div class="metric-value">{dxy:.2f}</div>', unsafe_allow_html=True)
             else:
-                st.metric("달러 인덱스 (DXY)", "N/A", "-")
+                st.markdown('<div class="metric-value">N/A</div>', unsafe_allow_html=True)
+            if dxy_chg is not None:
+                if dxy_chg >= 0:
+                    st.markdown(f'<div class="metric-delta-pos">↑ {dxy_chg:.2f}%</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="metric-delta-neg">↓ {abs(dxy_chg):.2f}%</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
         with col6:
-            st.write("")
-            st.caption(
-                '<span class="small-muted">※ 수치는 약간의 지연이 있을 수 있습니다.</span>',
-                unsafe_allow_html=True,
-            )
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown('<div class="metric-label">참고</div>', unsafe_allow_html=True)
+            st.markdown('<div class="small-muted">※ 수치는 약간의 지연이 있을 수 있습니다.</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown("---")
 
-        # ETF 3대장
         st.caption("📈 ETF 3대장 (QQQ · VOO · SOXX)")
         if etfs:
             cols_etf = st.columns(3)
@@ -1291,76 +1296,87 @@ with col_main:
                     basis = e.get("basis")
                     state = e.get("market_state", "")
 
+                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-label">{sym}</div>', unsafe_allow_html=True)
                     value_str = f"{current:.2f}" if current is not None else "N/A"
-                    delta = f"{chg:.2f}%" if chg is not None else "-"
-
-                    st.metric(sym, value_str, delta)
+                    st.markdown(f'<div class="metric-value">{value_str}</div>', unsafe_allow_html=True)
+                    if chg is not None:
+                        if chg >= 0:
+                            st.markdown(f'<div class="metric-delta-pos">↑ {chg:.2f}%</div>', unsafe_allow_html=True)
+                        else:
+                            st.markdown(f'<div class="metric-delta-neg">↓ {abs(chg):.2f}%</div>', unsafe_allow_html=True)
                     extra = basis
                     if state:
                         extra += f" · 상태: {state}"
-                    st.caption(extra)
-            st.caption(
-                '<span class="small-muted">※ %는 전일 종가 대비 기준입니다.</span>',
-                unsafe_allow_html=True,
-            )
+                    st.markdown(f'<div class="small-muted">{extra}</div>', unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+            st.caption("※ %는 전일 종가 대비 기준입니다.")
         else:
             st.write("ETF 데이터를 불러오지 못했습니다.")
 
-        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown("---")
 
         # BIG TECH LAYER
+        bt_score = bigtech_layer.get("score", 0)
+        bt_items = bigtech_layer.get("items", [])
+        st.markdown('<div class="card-soft">', unsafe_allow_html=True)
+        st.markdown('<div class="layer-title-en">BIG TECH LAYER</div>', unsafe_allow_html=True)
         st.markdown(
-            '<div class="card-small"><div class="card-title">BIG TECH LAYER</div>',
+            f'<div class="chip chip-green">빅테크 강도 점수: {bt_score}</div>',
             unsafe_allow_html=True,
         )
-        if bt_data:
-            bt_col1, bt_col2 = st.columns([1, 2])
-            with bt_col1:
-                st.markdown(
-                    f'<span class="badge">빅테크 강도 점수: {bt_score}</span>',
-                    unsafe_allow_html=True,
-                )
-            with bt_col2:
-                lines = []
-                for d in bt_data:
-                    lines.append(
-                        f'<div class="layer-line">{d["symbol"]}: {format_change_html(d["chg"])}</div>'
-                    )
-                st.markdown("".join(lines), unsafe_allow_html=True)
-        else:
-            st.caption("빅테크 데이터를 불러오지 못했습니다.")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        st.markdown("<hr>", unsafe_allow_html=True)
-
-        # SECTOR ROTATION LAYER
-        st.markdown(
-            '<div class="card-small"><div class="card-title">SECTOR ROTATION LAYER</div>',
-            unsafe_allow_html=True,
-        )
-        if sec_data:
-            sec_col1, sec_col2 = st.columns([1, 2])
-            with sec_col1:
-                st.markdown(
-                    f'<span class="badge badge-sector">섹터 점수: {sec_score}</span>',
-                    unsafe_allow_html=True,
-                )
-            with sec_col2:
-                lines = []
-                for row in sec_data:
-                    lines.append(
-                        f'<div class="layer-line">{row["name"]}: {format_change_html(row["chg"])}</div>'
-                    )
-                st.markdown("".join(lines), unsafe_allow_html=True)
-            st.caption(
-                '<span class="small-muted">※ 섹터별 강도 흐름으로 성장/방어/에너지 쏠림을 한 눈에 체크.</span>',
+        for it in bt_items:
+            sym = it["symbol"]
+            chg = it["chg"]
+            if chg is None:
+                continue
+            sign = "+" if chg > 0 else ""
+            if chg > 0:
+                cls = "layer-chg-pos"
+            elif chg < 0:
+                cls = "layer-chg-neg"
+            else:
+                cls = "layer-chg-flat"
+            st.markdown(
+                f'<div class="layer-row"><span class="layer-symbol">{sym}</span>'
+                f'<span class="{cls}">{sign}{chg:.2f}%</span></div>',
                 unsafe_allow_html=True,
             )
-        else:
-            st.caption("섹터 ETF 데이터를 불러오지 못했습니다.")
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown("<hr>", unsafe_allow_html=True)
+        # SECTOR ROTATION LAYER
+        sec_score = sector_layer.get("score", 0)
+        sec_items = sector_layer.get("items", [])
+        st.markdown('<div class="card-soft">', unsafe_allow_html=True)
+        st.markdown('<div class="layer-title-en">SECTOR ROTATION LAYER</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="chip chip-blue">섹터 점수: {sec_score}</div>',
+            unsafe_allow_html=True,
+        )
+        for it in sec_items:
+            label = it["label"]
+            chg = it["chg"]
+            if chg is None:
+                continue
+            sign = "+" if chg > 0 else ""
+            if chg > 0:
+                cls = "layer-chg-pos"
+            elif chg < 0:
+                cls = "layer-chg-neg"
+            else:
+                cls = "layer-chg-flat"
+            st.markdown(
+                f'<div class="layer-row"><span class="layer-symbol">{label}</span>'
+                f'<span class="{cls}">{sign}{chg:.2f}%</span></div>',
+                unsafe_allow_html=True,
+            )
+        st.markdown(
+            '<div class="small-muted">※ 섹터별 강도 흐름을 통해 성장/방어/에너지 쏠림을 한 눈에 체크.</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("---")
 
     # 2) 내 종목 자동 판독기
     st.subheader("🔍 내 종목 자동 판독기 + 실전 보조지표")
@@ -1383,7 +1399,6 @@ with col_main:
             step=0.05,
         )
 
-    # 간단 자동완성
     prefix = user_symbol.strip().upper().replace(" ", "")
     candidates = sorted(set(POPULAR_SYMBOLS + st.session_state["recent_symbols"]))
     suggestions = []
@@ -1497,22 +1512,22 @@ with col_main:
     with col_b:
         st.markdown(
             f"""
- <div class="card">
-   <div class="card-title">MODE</div>
-   <div class="card-value">{cfg['name']} 모드</div>
-   <div class="card-sub">차트 기간: {cfg['period']} · 손절: -{cfg['stop_loss_pct']}% · 익절: +{cfg['take_profit_pct']}%</div>
- </div>
+<div class="card-soft-sm">
+  <div class="small-muted">MODE</div>
+  <div style="font-size:1.05rem;font-weight:600;">{cfg['name']} 모드</div>
+  <div class="small-muted">차트 기간: {cfg['period']} · 손절: -{cfg['stop_loss_pct']}% · 익절: +{cfg['take_profit_pct']}%</div>
+</div>
 """,
             unsafe_allow_html=True,
         )
     with col_c:
         st.markdown(
             f"""
- <div class="card">
-   <div class="card-title">POSITION</div>
-   <div class="card-sub">보유 상태: <b>{holding_type}</b></div>
-   <div class="card-sub">평단/수익률은 보유중일 때만 계산됩니다.</div>
- </div>
+<div class="card-soft-sm">
+  <div class="small-muted">POSITION</div>
+  <div>보유 상태: <b>{holding_type}</b></div>
+  <div class="small-muted">평단/수익률은 보유중일 때만 계산됩니다.</div>
+</div>
 """,
             unsafe_allow_html=True,
         )
@@ -1536,23 +1551,14 @@ with col_main:
         st.write(f"**추천 액션:** ⭐ {signal} ⭐")
         st.write(f"**단기 방향성:** {bias_comment}")
     with col_sig2:
-        if rr is not None and tech_tp is not None and tech_sl is not None:
-            st.caption(
-                f"기술적 TP/SL 기준 손익비(보상/위험): 약 **{rr:.2f} : 1** 위치"
-            )
-        else:
-            st.caption("기술적 TP/SL 기준 손익비 계산이 애매한 구간입니다.")
-
-    # 신규 진입 모드일 때 리스크·리워드 요약
-    if holding_type == "신규 진입 검토" and tech_tp is not None and tech_sl is not None:
-        st.subheader("🧮 신규 진입 관련 리스크·리워드 (기술적 TP/SL 기준)")
-        up_pct = (tech_tp - price) / price * 100
-        down_pct = (price - tech_sl) / price * 100
-        st.write(f"- 위쪽 잠재 수익 여지: **+{up_pct:.2f}%** (기술적 목표가 기준)")
-        st.write(f"- 아래쪽 기술적 손절 여지: **-{down_pct:.2f}%** (기술적 손절가 기준)")
         if rr is not None:
-            st.write(f"- 현재 가격 기준 손익비(보상/위험): **{rr:.2f} : 1**")
-        st.caption("※ 위 수치는 레버리지, 수수료, 세금, 환율 변동 등을 반영하지 않은 기술적 구간 기준입니다.")
+            st.metric("손익비 (기술적 TP/SL 기준)", f"{rr:.2f} : 1")
+            if rr >= 1.5:
+                st.caption("👉 기술적 지지/저항 기준으로 손익비 양호한 구간")
+            elif rr <= 1.0:
+                st.caption("⚠ 손익비 좋지 않음 (기술적으로 손절 폭이 더 큼)")
+        else:
+            st.caption("손익비 계산 불가 (기술적 TP/SL 기준이 불안정한 위치)")
 
     st.subheader("📌 가격 레벨 (진입/익절/손절 가이드)")
     if holding_type == "보유 중":
@@ -1569,6 +1575,17 @@ with col_main:
         st.write(f"- 2차 분할매수(조정 시): **{entry2:.2f} USD** 이하 구간")
         st.caption("※ 신규 진입은 1·2차로 나누어 분할 매수하는 기준입니다.")
 
+        # 신규 진입 리스크·리워드 요약
+        st.markdown("#### 신규 진입 관련 리스크·리워드 요약")
+        if tech_tp is not None and tech_sl is not None:
+            up_side = (tech_tp - price) / price * 100
+            down_side = (price - tech_sl) / price * 100
+            st.write(f"- 위쪽 잠재 수익 여지: **+{up_side:.2f}%** (기술적 저항 기준)")
+            st.write(f"- 아래쪽 기술적 손실 여지: **-{down_side:.2f}%** (기술적 지지/손절선 기준)")
+            st.caption("※ 순수 기술적 TP/SL 기준으로 손절선 대기전의 위/아래 여유입니다.")
+        else:
+            st.caption("기술적 TP/SL이 애매한 위치라 리스크·리워드 요약이 어렵습니다.")
+
     st.subheader("📊 갭 · 변동성 · 장중 흐름")
     col_gap, col_atr, col_intra = st.columns(3)
     with col_gap:
@@ -1577,6 +1594,7 @@ with col_main:
             st.caption(gap_comment)
         else:
             st.caption("갭 정보를 계산하기에 데이터가 부족합니다.")
+
     with col_atr:
         if atr14 is not None:
             st.metric("ATR(14, 일봉)", f"{atr14:.2f}")
@@ -1585,6 +1603,7 @@ with col_main:
                 st.caption(f"오늘 캔들 몸통 크기: ATR의 {ratio:.2f}배")
         else:
             st.caption("ATR 계산 불가 (데이터 부족)")
+
     with col_intra:
         if intraday_sc is not None:
             st.metric("장중 흐름 스코어 (0~4)", f"{intraday_sc}")
