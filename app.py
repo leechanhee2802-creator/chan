@@ -1747,7 +1747,13 @@ with col_main:
 
     eff_avg_price = avg_price if holding_type == "보유 중" else 0.0
     buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, eff_avg_price, cfg)
-
+# ==========================
+# 신규 진입 손절 로직 분리 (중요)
+# ==========================
+if holding_type == "신규 진입 검토" and buy_low is not None:
+    # 신규 진입은 '매수 가설 실패' 기준 손절
+    sl0 = buy_low * 0.97   # 1차 손절
+    sl1 = buy_low * 0.94   # 최종 방어선
     tech_tp, tech_sl = calc_technical_tp_sl(df, cfg)
     rr = calc_rr_ratio(price, tech_tp, tech_sl)
 
@@ -1961,3 +1967,4 @@ with col_main:
 
 if __name__ == "__main__":
     pass
+
