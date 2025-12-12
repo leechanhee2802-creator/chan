@@ -15,6 +15,8 @@ st.set_page_config(
 
 # =====================================
 # 전체 스타일 (화이트 + 프로 느낌, PC/모바일 공통)
+#  - 라이트모드 강제
+#  - 텍스트 컬러 전역 진한색으로 통일 (모바일에서도 글씨 확실히 보이게)
 # =====================================
 st.markdown(
     """
@@ -24,6 +26,9 @@ st.markdown(
 html, body, [data-testid="stAppViewContainer"] {
     font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     color: #111827;
+    background-color: #ffffff;
+    color-scheme: light;
+    -webkit-text-size-adjust: 100% !important;
 }
 
 /* 전체 배경: 옅은 그라데이션 */
@@ -47,22 +52,23 @@ header, [data-testid="stHeader"], [data-testid="stSidebar"] {
 h1 {
     font-size: 1.6rem;
     font-weight: 700;
-    color: #111827;
+    color: #111827 !important;
 }
 h2 {
     font-size: 1.25rem;
     font-weight: 600;
-    color: #111827;
+    color: #111827 !important;
 }
 h3 {
     font-size: 1.05rem;
     font-weight: 600;
-    color: #111827;
+    color: #111827 !important;
 }
 
-/* 기본 텍스트 */
+/* 기본 텍스트: 전역 진한 글씨 (모바일에서 안 보이는 문제 방지) */
 p, label, span, div {
     font-size: 0.94rem;
+    color: #111827 !important;
 }
 
 /* 얇은 캡션 */
@@ -88,6 +94,7 @@ p, label, span, div {
     padding: 10px 14px;
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
     border: 1px solid #e5e7eb;
+    margin-bottom: 10px;
 }
 
 /* 칩 (점수 배지) */
@@ -101,15 +108,15 @@ p, label, span, div {
 }
 .chip-green {
     background: #bbf7d0;
-    color: #166534;
+    color: #166534 !important;
 }
 .chip-blue {
     background: #dbeafe;
-    color: #1d4ed8;
+    color: #1d4ed8 !important;
 }
 .chip-red {
     background: #fee2e2;
-    color: #b91c1c;
+    color: #b91c1c !important;
 }
 
 /* BIG TECH / SECTOR 레이어 제목(영문) */
@@ -117,7 +124,7 @@ p, label, span, div {
     font-size: 0.85rem;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: #6b7280;
+    color: #6b7280 !important;
     margin-bottom: 4px;
 }
 
@@ -131,22 +138,22 @@ p, label, span, div {
 .layer-symbol {
     font-weight: 600;
     font-size: 0.95rem;
-    color: #111827;
+    color: #111827 !important;
 }
 .layer-chg-pos {
     font-weight: 600;
     font-size: 0.95rem;
-    color: #dc2626; /* 빨강 */
+    color: #dc2626 !important; /* 빨강 */
 }
 .layer-chg-neg {
     font-weight: 600;
     font-size: 0.95rem;
-    color: #2563eb; /* 파랑 */
+    color: #2563eb !important; /* 파랑 */
 }
 .layer-chg-flat {
     font-weight: 600;
     font-size: 0.95rem;
-    color: #4b5563;
+    color: #4b5563 !important;
 }
 
 /* 미국 시장 실시간 흐름 안의 metric 카드 */
@@ -161,12 +168,13 @@ p, label, span, div {
 .metric-label {
     font-size: 0.8rem;
     font-weight: 500;
-    color: #6b7280;
+    color: #6b7280 !important;
 }
 .metric-value {
     font-size: 1.3rem;
     font-weight: 700;
     margin-top: 4px;
+    color: #111827 !important;
 }
 .metric-delta-pos {
     display: inline-flex;
@@ -175,7 +183,7 @@ p, label, span, div {
     padding: 2px 8px;
     border-radius: 999px;
     background: #bbf7d0;
-    color: #166534;
+    color: #166534 !important;
     font-size: 0.78rem;
     font-weight: 600;
 }
@@ -186,7 +194,7 @@ p, label, span, div {
     padding: 2px 8px;
     border-radius: 999px;
     background: #fee2e2;
-    color: #b91c1c;
+    color: #b91c1c !important;
     font-size: 0.78rem;
     font-weight: 600;
 }
@@ -213,6 +221,12 @@ input::placeholder, textarea::placeholder {
 /* radio */
 [data-baseweb="radio"] > label {
     background-color: transparent !important;
+    color: #111827 !important;
+}
+
+/* 탭 헤더 텍스트 가독성 강화 */
+button[role="tab"] > div {
+    color: #111827 !important;
 }
 
 /* 버튼 */
@@ -223,6 +237,7 @@ input::placeholder, textarea::placeholder {
     background: #ffffff;
     font-size: 0.92rem;
     font-weight: 500;
+    color: #111827 !important;
 }
 .stButton>button:hover {
     border-color: #4f46e5;
@@ -234,6 +249,17 @@ input::placeholder, textarea::placeholder {
     background-color: #ffffff;
 }
 
+/* 신규 진입 스캐너용 RSI 색상 텍스트 (선택적으로 사용 가능) */
+.rsi-cold {
+    color: #2563eb !important;
+}
+.rsi-neutral {
+    color: #111827 !important;
+}
+.rsi-hot {
+    color: #b91c1c !important;
+}
+
 /* 모바일(좁은 화면)에서 살짝 폰트 키우기 */
 @media (max-width: 768px) {
     .metric-value {
@@ -242,6 +268,11 @@ input::placeholder, textarea::placeholder {
     .layer-symbol, .layer-chg-pos, .layer-chg-neg, .layer-chg-flat {
         font-size: 1.0rem;
     }
+}
+
+/* Expander 헤더 텍스트도 진하게 */
+[data-testid="stExpander"] summary {
+    color: #111827 !important;
 }
 </style>
 """,
@@ -332,7 +363,7 @@ POPULAR_SYMBOLS = [
     "ORCL", "PYPL", "NFLX", "PLTR", "AVGO",
 ]
 
-# 신규 진입 스캐너용 후보 리스트 (필요시 여기에 추가해도 됨)
+# 신규 진입 스캐너용 후보 리스트
 SCAN_CANDIDATES = sorted(set(
     POPULAR_SYMBOLS
     + ["NVDA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "TSLA"]
@@ -1219,8 +1250,6 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
         last = df.iloc[-1]
         price = float(last["Close"])
         rsi = float(last["RSI14"])
-        k = float(last["STOCH_K"])
-        d = float(last["STOCH_D"])
 
         buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, 0.0, cfg)
         if buy_low is None or buy_high is None:
@@ -1233,7 +1262,6 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
         # 조건:
         # - 매수밴드 3% 밖으로 벗어나면 제외
         # - RSI 과열 제외
-        # - 장기 하락 모멘텀 제외
         if price < buy_low * 0.97 or price > buy_high * 1.05:
             continue
         if rsi > 65:
@@ -1574,38 +1602,112 @@ with col_main:
     # 신규 진입 스캐너 버튼
     scan_click = st.button("📊 신규 진입 스캐너 실행 (관심 종목 후보 찾기)", key="run_scan")
 
+    # ====== [업그레이드된 신규 진입 스캐너 UI - C 타입: 리스트 + 카드] ======
     if scan_click:
         with st.spinner("신규 진입 후보 종목 스캔 중..."):
             scan_mkt_score, scan_list = scan_new_entry_candidates(cfg)
+
         st.subheader("🛰 신규 진입 스캐너 결과")
         if scan_mkt_score <= -4:
             st.warning("시장 점수가 강한 Risk-off 구간이라, 신규 진입은 특히 보수적으로 볼 필요가 있습니다.")
+
         if not scan_list:
             st.write("조건을 만족하는 신규 진입 후보 종목이 없습니다.")
         else:
+            st.caption(f"총 **{len(scan_list)}개** 종목이 조건을 만족했습니다. (점수 순 정렬)")
+
+            # 리스트(테이블) 형태 요약
+            table_rows = []
             for item in scan_list:
                 sym = item["symbol"]
                 price = item["price"]
                 rsi = item["rsi"]
                 bias = item["bias"]
+                dist_band = item["dist_band"]
+                buy_low = item["buy_low"]
+                buy_high = item["buy_high"]
+                table_rows.append({
+                    "종목": sym,
+                    "현재가(USD)": round(price, 2),
+                    "RSI14": round(rsi, 1),
+                    "단기 흐름": bias,
+                    "매수밴드 중심과 거리(%)": round(dist_band, 2),
+                    "매수밴드 하단": round(buy_low, 2),
+                    "매수밴드 상단": round(buy_high, 2),
+                })
+            df_scan = pd.DataFrame(table_rows).set_index("종목")
+            st.dataframe(df_scan, use_container_width=True)
+            st.caption("※ 리스트에서 대략적인 위치/밴드 확인 후, 아래 카드에서 개별 종목을 바로 분석할 수 있습니다.")
+
+            st.markdown("---")
+            st.markdown("#### 📌 후보 종목 카드 & 바로 분석")
+
+            for item in scan_list:
+                sym = item["symbol"]
+                price = item["price"]
+                rsi = item["rsi"]
+                bias = item["bias"]
+                dist_band = item["dist_band"]
                 buy_low = item["buy_low"]
                 buy_high = item["buy_high"]
                 tp1 = item["tp1"]
                 sl0 = item["sl0"]
-                st.write(
-                    f"- **{sym}** 현재가 **{price:.2f} USD** · RSI **{rsi:.1f}** · 단기 흐름: {bias}"
+                score = item["score"]
+
+                # RSI 색상 클래스 선택
+                if rsi < 40:
+                    rsi_cls = "rsi-cold"
+                elif rsi > 65:
+                    rsi_cls = "rsi-hot"
+                else:
+                    rsi_cls = "rsi-neutral"
+
+                # 밴드 중심과의 거리 → 게이지 (가까울수록 굵게)
+                # 0%면 100%, 3% 넘어가면 최소 10% 정도로 표현
+                gauge_fill = max(10, min(100, int(100 - dist_band * 25)))
+
+                st.markdown('<div class="card-soft-sm">', unsafe_allow_html=True)
+                st.markdown(
+                    f"""
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+  <div style="font-size:1.0rem;font-weight:700;">{sym}</div>
+  <div class="chip chip-blue">스코어: {score:.1f}</div>
+</div>
+<div style="font-size:0.9rem;margin-bottom:4px;">
+  현재가: <b>{price:.2f} USD</b> · 
+  RSI: <span class="{rsi_cls}">{rsi:.1f}</span> ({comment_rsi(rsi)}) · 
+  단기 흐름: {bias}
+</div>
+<div style="font-size:0.88rem;margin-bottom:4px;">
+  매수 밴드: <b>{buy_low:.2f} ~ {buy_high:.2f} USD</b><br>
+  밴드 중심과의 거리: 약 {dist_band:.2f}%
+</div>
+<div style="width:100%;height:6px;border-radius:999px;background:#e5e7eb;margin:6px 0 2px 0;">
+  <div style="width:{gauge_fill}%;height:100%;border-radius:999px;background:#4f46e5;"></div>
+</div>
+<div class="small-muted">게이지가 길수록 '매수 밴드 중심'에 더 가까운 위치입니다.</div>
+""",
+                    unsafe_allow_html=True,
                 )
                 if tp1 is not None and sl0 is not None:
-                    st.caption(
-                        f"  ↳ 신규 진입 관심 구간: {buy_low:.2f} ~ {buy_high:.2f} USD, "
-                        f"1차 목표: {tp1:.2f} USD, 추세 손절 기준: {sl0:.2f} USD"
+                    st.markdown(
+                        f"""
+<div class="small-muted">
+1차 목표: <b>{tp1:.2f} USD</b> · 추세 손절 기준: <b>{sl0:.2f} USD</b>
+</div>
+""",
+                        unsafe_allow_html=True,
                     )
-                else:
-                    st.caption(
-                        f"  ↳ 신규 진입 관심 구간: {buy_low:.2f} ~ {buy_high:.2f} USD "
-                        f"(추세 손절/목표가는 데이터 부족으로 단순 참고)"
-                    )
-        st.markdown("---")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                go = st.button(f"📌 {sym} 이 종목 분석하기", key=f"scan_go_{sym}")
+                if go:
+                    st.session_state["symbol_input"] = sym
+                    st.session_state["selected_symbol"] = sym
+                    st.session_state["run_from_side"] = True
+                    st.experimental_rerun()
+
+            st.markdown("---")
 
     col_mid1, col_mid2 = st.columns(2)
     avg_price = 0.0
