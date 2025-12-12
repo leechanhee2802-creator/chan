@@ -1332,6 +1332,17 @@ if "run_from_side" not in st.session_state:
 
 if "symbol_input" not in st.session_state:
     st.session_state["symbol_input"] = st.session_state["selected_symbol"]
+# 스캐너/즐겨찾기에서 '바로 분석' 눌렀을 때 임시로 담아둘 종목
+if "pending_symbol" not in st.session_state:
+    st.session_state["pending_symbol"] = ""
+
+# pending_symbol 이 설정되어 있으면, 위젯 만들기 전에 symbol_input에 반영
+if st.session_state.get("pending_symbol"):
+    ps = st.session_state["pending_symbol"]
+    st.session_state["symbol_input"] = ps
+    st.session_state["selected_symbol"] = ps
+    st.session_state["run_from_side"] = True
+    st.session_state["pending_symbol"] = ""
 
 # 신규 진입 스캐너 결과 저장용
 if "scan_results" not in st.session_state:
@@ -1669,11 +1680,11 @@ with col_main:
                     scan_clicked_symbol = sym
 
             # for문 끝난 뒤 session_state 변경 (← 에러 방지 핵심)
-            if scan_clicked_symbol is not None:
-                st.session_state["symbol_input"] = scan_clicked_symbol
-                st.session_state["selected_symbol"] = scan_clicked_symbol
-                st.session_state["run_from_side"] = True
+                        if scan_clicked_symbol is not None:
+                # 바로 symbol_input 건드리지 말고, pending_symbol에만 넣고 rerun
+                st.session_state["pending_symbol"] = scan_clicked_symbol
                 st.rerun()
+
 
             st.markdown("---")
 
@@ -1924,4 +1935,5 @@ with col_main:
 
 if __name__ == "__main__":
     pass
+
 
