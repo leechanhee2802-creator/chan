@@ -1680,7 +1680,7 @@ with col_main:
                     scan_clicked_symbol = sym
 
             # for문 끝난 뒤 session_state 변경 (← 에러 방지 핵심)
-                        if scan_clicked_symbol is not None:
+            if scan_clicked_symbol is not None:
                 # 바로 symbol_input 건드리지 말고, pending_symbol에만 넣고 rerun
                 st.session_state["pending_symbol"] = scan_clicked_symbol
                 st.rerun()
@@ -1935,5 +1935,6 @@ with col_main:
 
 if __name__ == "__main__":
     pass
+
 
 
