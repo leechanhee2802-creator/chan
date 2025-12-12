@@ -3,7 +3,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import requests
-import streamlit.components.v1 as components
 
 # =====================================
 # 페이지 설정
@@ -1064,15 +1063,6 @@ def calc_levels(df, last, avg_price, cfg):
     tp0, tp1, tp2 = calc_trend_targets(df, cfg)
     sl0, sl1 = calc_trend_stops(df, cfg)
 
-    # ---------------------------------------
-    # 손절 보정(매수 구간보다 손절이 위로 튀지 않도록)
-    # ---------------------------------------
-    if buy_low is not None and sl0 is not None and sl0 > buy_low:
-        sl0 = buy_low * 0.99  # 매수 구간보다 항상 아래
-
-    if sl0 is not None and sl1 is not None and sl1 >= sl0:
-        sl1 = sl0 * 0.97
-
     return buy_low, buy_high, tp0, tp1, tp2, sl0, sl1
 
 
@@ -1346,6 +1336,10 @@ if "symbol_input" not in st.session_state:
 # 스캐너/즐겨찾기에서 '바로 분석' 눌렀을 때 임시로 담아둘 종목
 if "pending_symbol" not in st.session_state:
     st.session_state["pending_symbol"] = ""
+
+# 스크롤 플래그
+if "scroll_to_result" not in st.session_state:
+    st.session_state["scroll_to_result"] = False
 
 # pending_symbol 이 설정되어 있으면, 위젯 만들기 전에 symbol_input에 반영
 if st.session_state.get("pending_symbol"):
@@ -1645,21 +1639,35 @@ with col_main:
     if suggestions:
         st.caption("자동완성 도움: " + ", ".join(suggestions[:6]))
 
-    # 신규 진입 스캐너 버튼
+    # --- 보유 정보 & 분석 버튼 (항상 위에 유지되게) ---
+    col_mid1, col_mid2 = st.columns(2)
+    avg_price = 0.0
+    shares = 0
+    if holding_type == "보유 중":
+        with col_mid1:
+            avg_price = st.number_input("내 평단가 (USD)", min_value=0.0, value=0.0, step=0.01)
+        with col_mid2:
+            shares = st.number_input("보유 수량 (주)", min_value=0, value=0, step=1)
+
+    run_click = st.button("🚀 분석하기", key="run_analyze")
+    run_from_side = st.session_state.get("run_from_side", False)
+    run = run_click or run_from_side
+    if run:
+        st.session_state["scroll_to_result"] = True
+    st.session_state["run_from_side"] = False
+
+    # --- 신규 진입 스캐너 (버튼/결과를 아래에 배치, 위의 버튼들이 안 밀리도록) ---
     scan_click = st.button("📊 신규 진입 스캐너 실행 (관심 종목 후보 찾기)", key="run_scan")
 
-    # 스캐너 실행 시 결과를 세션에 저장
     if scan_click:
         with st.spinner("신규 진입 후보 종목 스캔 중..."):
             scan_mkt_score, scan_list = scan_new_entry_candidates(cfg)
-
         st.session_state["scan_results"] = {
             "cfg": cfg,
             "market_score": scan_mkt_score,
             "items": scan_list,
         }
 
-    # 저장된 스캐너 결과가 있으면 항상 보여주기 (A안: 심플)
     scan_data = st.session_state.get("scan_results")
     if scan_data:
         scan_mkt_score = scan_data["market_score"]
@@ -1697,28 +1705,13 @@ with col_main:
 
         st.markdown("---")
 
-    col_mid1, col_mid2 = st.columns(2)
-    avg_price = 0.0
-    shares = 0
-    if holding_type == "보유 중":
-        with col_mid1:
-            avg_price = st.number_input("내 평단가 (USD)", min_value=0.0, value=0.0, step=0.01)
-        with col_mid2:
-            shares = st.number_input("보유 수량 (주)", min_value=0, value=0, step=1)
-
-    run_click = st.button("🚀 분석하기", key="run_analyze")
-    run = run_click or st.session_state.get("run_from_side", False)
-
+    # --- 스캐너까지 다 그리고 나서, 분석 실행 여부 판단 ---
     if not run:
-        st.session_state["run_from_side"] = False
         st.stop()
 
-    # 여기 도달하면 분석 실행
-    st.session_state["run_from_side"] = False
-
-    # 분석 섹션 시작 위치 anchor (자동 스크롤용)
-    st.markdown('<div id="analysis-anchor"></div>', unsafe_allow_html=True)
-
+    # ==========================
+    # 실제 분석 로직
+    # ==========================
     symbol = normalize_symbol(user_symbol)
     display_name = user_symbol
     st.session_state["selected_symbol"] = user_symbol
@@ -1789,21 +1782,22 @@ with col_main:
     # ==========================
     # UI 출력
     # ==========================
-    st.subheader("🧾 요약")
 
-    # 🔽 여기서 실제로 스크롤 실행 (분석하기/스캐너에서 진입 시)
-    components.html(
-        """
-        <script>
-        const anchor = window.parent.document.querySelector('#analysis-anchor');
-        if (anchor) {
-            anchor.scrollIntoView({behavior: 'smooth', block: 'start'});
-        }
-        </script>
-        """,
-        height=0,
-        width=0,
-    )
+    # 분석 결과로 자동 스크롤
+    if st.session_state.get("scroll_to_result", False):
+        st.markdown(
+            """
+            <div id="analysis_result_anchor"></div>
+            <script>
+            var el = document.getElementById("analysis_result_anchor");
+            if (el) { el.scrollIntoView({behavior: "smooth", block: "start"}); }
+            </script>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.session_state["scroll_to_result"] = False
+
+    st.subheader("🧾 요약")
 
     st.write(f"- 입력 종목: **{display_name}** → 실제 티커: **{symbol}**")
     if fgi is not None:
@@ -1892,6 +1886,12 @@ with col_main:
             st.write(f"- 1차 진입(소량 매수) 추천가: **{entry1:.2f} USD** 근처")
             st.write(f"- 2차 분할매수(조정 시): **{entry2:.2f} USD** 이하 구간")
             st.caption("※ 신규 진입은 1·2차로 나누어 분할 매수하는 기준입니다.")
+            # 신규 진입 시 손절 레벨도 같이 안내
+            if sl0 is not None:
+                st.write(f"- 기본 손절/추세 이탈 기준: **{sl0:.2f} USD**")
+            if sl1 is not None:
+                st.write(f"- 깊은 손절/최종 방어선: **{sl1:.2f} USD**")
+            st.caption("※ 손절 기준은 최근 스윙저점/박스 하단/MA20/ATR를 종합한 추세 이탈선입니다.")
 
         st.markdown("#### 신규 진입 관련 리스크·리워드 요약")
         if tech_tp is not None and tech_sl is not None:
