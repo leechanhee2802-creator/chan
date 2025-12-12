@@ -1658,6 +1658,7 @@ with col_main:
     if run:
         st.session_state["scroll_to_result"] = True
     st.session_state["run_from_side"] = False
+    st.session_state["scroll_to_result"] = True
 
     # --- 신규 진입 스캐너 (버튼/결과를 아래에 배치, 위의 버튼들이 안 밀리도록) ---
     scan_click = st.button("📊 신규 진입 스캐너 실행 (관심 종목 후보 찾기)", key="run_scan")
@@ -1793,18 +1794,22 @@ if holding_type == "신규 진입 검토" and buy_low is not None:
     # UI 출력
     # ==========================
 
-    # 분석 결과로 자동 스크롤
+   # ✅ 분석 결과로 자동 스크롤 (모바일/클라우드에서 확실히 먹는 버전)
+    st.markdown('<div id="analysis_result_anchor"></div>', unsafe_allow_html=True)
     if st.session_state.get("scroll_to_result", False):
         st.markdown(
-            """
-            <script>
+        """
+        <script>
+        // 렌더 타이밍 문제 방지: 약간 딜레이 후 스크롤
+        setTimeout(function () {
             var el = document.getElementById("analysis_result_anchor");
             if (el) { el.scrollIntoView({behavior: "smooth", block: "start"}); }
-            </script>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.session_state["scroll_to_result"] = False
+        }, 250);
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.session_state["scroll_to_result"] = False
     st.markdown('<div id="analysis_result_anchor"></div>', unsafe_allow_html=True)
     st.subheader("🧾 요약")
 
@@ -1970,6 +1975,7 @@ if holding_type == "신규 진입 검토" and buy_low is not None:
 
 if __name__ == "__main__":
     pass
+
 
 
 
