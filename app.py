@@ -1637,7 +1637,7 @@ with col_main:
             "items": scan_list,
         }
 
-    # 저장된 스캐너 결과가 있으면 항상 보여주기 (A안: 심플)
+        # 저장된 스캐너 결과가 있으면 항상 보여주기 (A안: 심플)
     scan_data = st.session_state.get("scan_results")
     if scan_data:
         scan_mkt_score = scan_data["market_score"]
@@ -1652,6 +1652,9 @@ with col_main:
         else:
             st.caption(f"총 **{len(scan_list)}개** 종목이 조건을 만족했습니다.")
 
+            # 버튼 클릭 임시 저장 변수
+            scan_clicked_symbol = None
+
             for item in scan_list:
                 sym = item["symbol"]
                 price = item["price"]
@@ -1663,10 +1666,17 @@ with col_main:
                 )
                 go = st.button(f"🔍 {sym} 이 종목 분석하기", key=f"scan_go_{sym}")
                 if go:
-                    st.session_state["symbol_input"] = sym
-                    st.session_state["selected_symbol"] = sym
-                    st.session_state["run_from_side"] = True
-                    st.experimental_rerun()
+                    scan_clicked_symbol = sym
+
+            # for문 끝난 뒤 session_state 변경 (← 에러 방지 핵심)
+            if scan_clicked_symbol is not None:
+                st.session_state["symbol_input"] = scan_clicked_symbol
+                st.session_state["selected_symbol"] = scan_clicked_symbol
+                st.session_state["run_from_side"] = True
+                st.rerun()
+
+            st.markdown("---")
+
 
             st.markdown("---")
 
@@ -1914,3 +1924,4 @@ with col_main:
 
 if __name__ == "__main__":
     pass
+
