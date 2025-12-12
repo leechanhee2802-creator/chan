@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import requests
+import streamlit.components.v1 as components
 
 # =====================================
 # 페이지 설정
@@ -1063,6 +1064,15 @@ def calc_levels(df, last, avg_price, cfg):
     tp0, tp1, tp2 = calc_trend_targets(df, cfg)
     sl0, sl1 = calc_trend_stops(df, cfg)
 
+    # ---------------------------------------
+    # 손절 보정(매수 구간보다 손절이 위로 튀지 않도록)
+    # ---------------------------------------
+    if buy_low is not None and sl0 is not None and sl0 > buy_low:
+        sl0 = buy_low * 0.99  # 매수 구간보다 항상 아래
+
+    if sl0 is not None and sl1 is not None and sl1 >= sl0:
+        sl1 = sl0 * 0.97
+
     return buy_low, buy_high, tp0, tp1, tp2, sl0, sl1
 
 
@@ -1332,6 +1342,7 @@ if "run_from_side" not in st.session_state:
 
 if "symbol_input" not in st.session_state:
     st.session_state["symbol_input"] = st.session_state["selected_symbol"]
+
 # 스캐너/즐겨찾기에서 '바로 분석' 눌렀을 때 임시로 담아둘 종목
 if "pending_symbol" not in st.session_state:
     st.session_state["pending_symbol"] = ""
@@ -1648,7 +1659,7 @@ with col_main:
             "items": scan_list,
         }
 
-        # 저장된 스캐너 결과가 있으면 항상 보여주기 (A안: 심플)
+    # 저장된 스캐너 결과가 있으면 항상 보여주기 (A안: 심플)
     scan_data = st.session_state.get("scan_results")
     if scan_data:
         scan_mkt_score = scan_data["market_score"]
@@ -1681,15 +1692,10 @@ with col_main:
 
             # for문 끝난 뒤 session_state 변경 (← 에러 방지 핵심)
             if scan_clicked_symbol is not None:
-                # 바로 symbol_input 건드리지 말고, pending_symbol에만 넣고 rerun
                 st.session_state["pending_symbol"] = scan_clicked_symbol
                 st.rerun()
 
-
-            st.markdown("---")
-
-
-            st.markdown("---")
+        st.markdown("---")
 
     col_mid1, col_mid2 = st.columns(2)
     avg_price = 0.0
@@ -1702,10 +1708,16 @@ with col_main:
 
     run_click = st.button("🚀 분석하기", key="run_analyze")
     run = run_click or st.session_state.get("run_from_side", False)
-    st.session_state["run_from_side"] = False
 
     if not run:
+        st.session_state["run_from_side"] = False
         st.stop()
+
+    # 여기 도달하면 분석 실행
+    st.session_state["run_from_side"] = False
+
+    # 분석 섹션 시작 위치 anchor (자동 스크롤용)
+    st.markdown('<div id="analysis-anchor"></div>', unsafe_allow_html=True)
 
     symbol = normalize_symbol(user_symbol)
     display_name = user_symbol
@@ -1778,6 +1790,20 @@ with col_main:
     # UI 출력
     # ==========================
     st.subheader("🧾 요약")
+
+    # 🔽 여기서 실제로 스크롤 실행 (분석하기/스캐너에서 진입 시)
+    components.html(
+        """
+        <script>
+        const anchor = window.parent.document.querySelector('#analysis-anchor');
+        if (anchor) {
+            anchor.scrollIntoView({behavior: 'smooth', block: 'start'});
+        }
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
 
     st.write(f"- 입력 종목: **{display_name}** → 실제 티커: **{symbol}**")
     if fgi is not None:
@@ -1935,6 +1961,3 @@ with col_main:
 
 if __name__ == "__main__":
     pass
-
-
-
