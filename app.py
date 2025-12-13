@@ -3,7 +3,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import requests
-import plotly.graph_objects as go
 
 # =====================================
 # 페이지 설정
@@ -15,7 +14,7 @@ st.set_page_config(
 )
 
 # =====================================
-# 전체 스타일 (라이트 강제 + 모바일 가독성)
+# 전체 스타일 (라이트 + 모바일 가독성 강화)
 # =====================================
 st.markdown(
     """
@@ -44,21 +43,25 @@ header, [data-testid="stHeader"], [data-testid="stSidebar"] {
     background-color: #ffffff !important;
 }
 
-[data-testid="stExpander"], [data-testid="stExpander"] > details,
+[data-testid="stExpander"],
+[data-testid="stExpander"] > details,
 [data-testid="stExpander"] details > summary,
 [data-testid="stExpander"] details > div {
     background-color: #ffffff !important;
     color: #111827 !important;
 }
 
+/* 제목들 */
 h1 { font-size: 1.6rem; font-weight: 700; color: #111827 !important; }
 h2 { font-size: 1.25rem; font-weight: 600; color: #111827 !important; }
 h3 { font-size: 1.05rem; font-weight: 600; color: #111827 !important; }
 
+/* 기본 텍스트 */
 p, label, span, div { font-size: 0.94rem; color: #111827 !important; }
 
 .small-muted { font-size: 0.8rem; color: #6b7280 !important; }
 
+/* 공통 카드 */
 .card-soft {
     background: rgba(255, 255, 255, 0.96);
     border-radius: 20px;
@@ -67,7 +70,6 @@ p, label, span, div { font-size: 0.94rem; color: #111827 !important; }
     border: 1px solid #e5e7eb;
     margin-bottom: 12px;
 }
-
 .card-soft-sm {
     background: rgba(255, 255, 255, 0.96);
     border-radius: 18px;
@@ -77,6 +79,7 @@ p, label, span, div { font-size: 0.94rem; color: #111827 !important; }
     margin-bottom: 10px;
 }
 
+/* 칩 */
 .chip {
     display: inline-flex;
     align-items: center;
@@ -89,6 +92,7 @@ p, label, span, div { font-size: 0.94rem; color: #111827 !important; }
 .chip-blue  { background: #dbeafe; color: #1d4ed8 !important; }
 .chip-red   { background: #fee2e2; color: #b91c1c !important; }
 
+/* 레이어 */
 .layer-title-en {
     font-size: 0.85rem;
     letter-spacing: 0.16em;
@@ -96,7 +100,6 @@ p, label, span, div { font-size: 0.94rem; color: #111827 !important; }
     color: #6b7280 !important;
     margin-bottom: 4px;
 }
-
 .layer-row {
     display: flex;
     justify-content: space-between;
@@ -104,10 +107,11 @@ p, label, span, div { font-size: 0.94rem; color: #111827 !important; }
     margin-top: 4px;
 }
 .layer-symbol { font-weight: 600; font-size: 0.95rem; color: #111827 !important; }
-.layer-chg-pos { font-weight: 600; font-size: 0.95rem; color: #dc2626 !important; }
-.layer-chg-neg { font-weight: 600; font-size: 0.95rem; color: #2563eb !important; }
+.layer-chg-pos { font-weight: 600; font-size: 0.95rem; color: #dc2626 !important; } /* 빨강 */
+.layer-chg-neg { font-weight: 600; font-size: 0.95rem; color: #2563eb !important; } /* 파랑 */
 .layer-chg-flat{ font-weight: 600; font-size: 0.95rem; color: #4b5563 !important; }
 
+/* metric 카드 */
 .metric-card {
     background: rgba(255, 255, 255, 0.96);
     border-radius: 20px;
@@ -119,26 +123,26 @@ p, label, span, div { font-size: 0.94rem; color: #111827 !important; }
 .metric-label { font-size: 0.8rem; font-weight: 500; color: #6b7280 !important; }
 .metric-value { font-size: 1.3rem; font-weight: 700; margin-top: 4px; color: #111827 !important; }
 .metric-delta-pos {
-    display: inline-flex; align-items: center; margin-top: 6px; padding: 2px 8px;
-    border-radius: 999px; background: #bbf7d0; color: #166534 !important;
+    display: inline-flex; align-items: center;
+    margin-top: 6px; padding: 2px 8px; border-radius: 999px;
+    background: #bbf7d0; color: #166534 !important;
     font-size: 0.78rem; font-weight: 600;
 }
 .metric-delta-neg {
-    display: inline-flex; align-items: center; margin-top: 6px; padding: 2px 8px;
-    border-radius: 999px; background: #fee2e2; color: #b91c1c !important;
+    display: inline-flex; align-items: center;
+    margin-top: 6px; padding: 2px 8px; border-radius: 999px;
+    background: #fee2e2; color: #b91c1c !important;
     font-size: 0.78rem; font-weight: 600;
 }
 
+/* 입력 박스 */
 [data-baseweb="input"] > div,
 [data-baseweb="select"] > div {
     background-color: #ffffff !important;
     border-radius: 999px !important;
     border: 1px solid #e5e7eb !important;
 }
-[data-baseweb="input"] input, textarea {
-    background-color: transparent !important;
-    color: #111827 !important;
-}
+[data-baseweb="input"] input, textarea { background-color: transparent !important; color: #111827 !important; }
 textarea { border-radius: 16px !important; }
 input::placeholder, textarea::placeholder { color: #9ca3af !important; }
 
@@ -159,6 +163,8 @@ button[role="tab"] > div { color: #111827 !important; }
     background: #eef2ff;
 }
 
+[data-testid="stDataFrame"], [data-testid="stTable"] { background-color: #ffffff; }
+
 @media (max-width: 768px) {
     .metric-value { font-size: 1.4rem; }
     .layer-symbol, .layer-chg-pos, .layer-chg-neg, .layer-chg-flat { font-size: 1.0rem; }
@@ -176,7 +182,8 @@ button[role="tab"] > div { color: #111827 !important; }
 KOREAN_TICKER_MAP = {
     "엔비디아": "NVDA", "엔비디아코퍼레이션": "NVDA",
     "마이크로소프트": "MSFT", "마소": "MSFT",
-    "애플": "AAPL", "테슬라": "TSLA",
+    "애플": "AAPL",
+    "테슬라": "TSLA",
     "아마존": "AMZN", "아마존닷컴": "AMZN",
     "구글": "GOOGL", "알파벳": "GOOGL", "알파벳A": "GOOGL", "알파벳C": "GOOG",
     "메타": "META", "페이스북": "META",
@@ -186,37 +193,33 @@ KOREAN_TICKER_MAP = {
     "브로드컴": "AVGO",
     "에이엠디": "AMD", "AMD": "AMD",
     "TSMC": "TSM", "티에스엠씨": "TSM",
-
+    "엔페이즈": "ENPH",
     "코카콜라": "KO", "펩시": "PEP",
     "맥도날드": "MCD", "스타벅스": "SBUX",
     "나이키": "NKE", "월마트": "WMT", "코스트코": "COST",
-
     "존슨앤존슨": "JNJ", "존슨앤드존슨": "JNJ",
     "화이자": "PFE", "모더나": "MRNA",
     "유나이티드헬스": "UNH", "메르크": "MRK", "애브비": "ABBV",
-
     "JP모건": "JPM", "제이피모건": "JPM",
     "골드만삭스": "GS", "모건스탠리": "MS",
     "뱅크오브아메리카": "BAC",
     "씨티": "C", "씨티그룹": "C",
     "페이팔": "PYPL",
-
     "엑슨모빌": "XOM", "셰브론": "CVX",
     "캐터필러": "CAT", "3M": "MMM",
     "허니웰": "HON", "디즈니": "DIS",
     "버라이즌": "VZ", "AT&T": "T",
     "오라클": "ORCL",
-
-    "코인베이스": "COIN",
+    "코인베이스": "COIN", "코인베이스글로벌": "COIN",
     "마이크로스트래티지": "MSTR",
     "리오트": "RIOT", "라이엇": "RIOT",
     "마라톤디지털": "MARA", "마라톤": "MARA",
     "클린스파크": "CLSK",
-
+    "비트팜": "BITF",
+    "갤럭시디지털": "BRPHF",
     "QQQ": "QQQ", "나스닥ETF": "QQQ", "나스닥100": "QQQ",
     "SPY": "SPY", "S&P500": "SPY", "SP500": "SPY",
-    "VOO": "VOO",
-
+    "VOO": "VOO", "S&P인덱스": "VOO",
     "SOXL": "SOXL", "반도체3배": "SOXL",
     "SOXS": "SOXS", "반도체인버스3배": "SOXS",
     "TQQQ": "TQQQ", "나스닥3배": "TQQQ",
@@ -224,7 +227,9 @@ KOREAN_TICKER_MAP = {
     "TECL": "TECL", "기술주3배": "TECL",
     "SPXL": "SPXL", "S&P3배": "SPXL",
     "SPXS": "SPXS", "S&P인버스3배": "SPXS",
-
+    "LABU": "LABU", "바이오3배": "LABU",
+    "LABD": "LABD", "바이오인버스3배": "LABD",
+    "ARKK": "ARKK",
     "비트코인ETF": "IBIT",
     "아이쉐어즈비트코인": "IBIT",
 }
@@ -236,8 +241,9 @@ POPULAR_SYMBOLS = [
     "ORCL", "PYPL", "NFLX", "PLTR", "AVGO",
 ]
 
-SCAN_CANDIDATES = sorted(set(POPULAR_SYMBOLS + ["GOOGL", "AMD", "TSM"]))
-
+SCAN_CANDIDATES = sorted(set(
+    POPULAR_SYMBOLS + ["NVDA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "TSLA"]
+))
 
 def normalize_symbol(user_input: str) -> str:
     name = (user_input or "").strip()
@@ -263,7 +269,6 @@ def fetch_fgi():
     except Exception:
         return None
 
-
 def get_usdkrw_rate():
     try:
         ticker = yf.Ticker("USDKRW=X")
@@ -274,7 +279,6 @@ def get_usdkrw_rate():
     except Exception:
         return 1350.0
 
-
 def get_last_extended_price(symbol: str):
     try:
         t = yf.Ticker(symbol)
@@ -284,7 +288,6 @@ def get_last_extended_price(symbol: str):
         return float(df["Close"].iloc[-1])
     except Exception:
         return None
-
 
 def safe_last_change_info(ticker_str: str):
     try:
@@ -298,7 +301,6 @@ def safe_last_change_info(ticker_str: str):
         return float(last), float(chg_pct), market_state
     except Exception:
         return None, None, ""
-
 
 def get_etf_price_with_prepost(symbol: str, name: str):
     try:
@@ -347,12 +349,33 @@ def get_etf_price_with_prepost(symbol: str, name: str):
             "market_state": market_state,
         }
     except Exception:
-        return {"symbol": symbol, "name": name, "current": None, "basis": "조회 실패", "chg_pct": None, "market_state": ""}
+        return {
+            "symbol": symbol,
+            "name": name,
+            "current": None,
+            "basis": "조회 실패",
+            "chg_pct": None,
+            "market_state": "",
+        }
 
+BIGTECH_LIST = [
+    ("NVDA", "NVDA"),
+    ("AAPL", "AAPL"),
+    ("MSFT", "MSFT"),
+    ("AMZN", "AMZN"),
+    ("META", "META"),
+    ("GOOGL", "GOOGL"),
+    ("TSLA", "TSLA"),
+]
 
-BIGTECH_LIST = [("NVDA", "NVDA"), ("AAPL", "AAPL"), ("MSFT", "MSFT"), ("AMZN", "AMZN"), ("META", "META"), ("GOOGL", "GOOGL"), ("TSLA", "TSLA")]
-SECTOR_ETF_LIST = [("기술주 (XLK)", "XLK"), ("반도체 (SOXX)", "SOXX"), ("금융 (XLF)", "XLF"), ("헬스케어 (XLV)", "XLV"), ("에너지 (XLE)", "XLE"), ("커뮤니케이션 (XLC)", "XLC")]
-
+SECTOR_ETF_LIST = [
+    ("기술주 (XLK)", "XLK"),
+    ("반도체 (SOXX)", "SOXX"),
+    ("금융 (XLF)", "XLF"),
+    ("헬스케어 (XLV)", "XLV"),
+    ("에너지 (XLE)", "XLE"),
+    ("커뮤니케이션 (XLC)", "XLC"),
+]
 
 @st.cache_data(ttl=60)
 def get_us_market_overview():
@@ -360,8 +383,10 @@ def get_us_market_overview():
 
     nq_last, nq_chg, nq_state = safe_last_change_info("NQ=F")
     es_last, es_chg, es_state = safe_last_change_info("ES=F")
-    overview["futures"] = {"nasdaq": {"last": nq_last, "chg_pct": nq_chg, "state": nq_state},
-                           "sp500": {"last": es_last, "chg_pct": es_chg, "state": es_state}}
+    overview["futures"] = {
+        "nasdaq": {"last": nq_last, "chg_pct": nq_chg, "state": nq_state},
+        "sp500": {"last": es_last, "chg_pct": es_chg, "state": es_state},
+    }
 
     tnx_last, tnx_chg, tnx_state = safe_last_change_info("^TNX")
     if tnx_last is not None:
@@ -371,12 +396,21 @@ def get_us_market_overview():
         us10y, us10y_chg = None, None
 
     dxy_last, dxy_chg, dxy_state = safe_last_change_info("DX-Y.NYB")
-    overview["rates_fx"] = {"us10y": us10y, "us10y_chg": us10y_chg, "us10y_state": tnx_state,
-                            "dxy": dxy_last, "dxy_chg": dxy_chg, "dxy_state": dxy_state}
 
-    etfs = [get_etf_price_with_prepost("QQQ", "QQQ (나스닥100 ETF)"),
-            get_etf_price_with_prepost("VOO", "VOO (S&P500 ETF)"),
-            get_etf_price_with_prepost("SOXX", "SOXX (반도체 ETF)")]
+    overview["rates_fx"] = {
+        "us10y": us10y,
+        "us10y_chg": us10y_chg,
+        "us10y_state": tnx_state,
+        "dxy": dxy_last,
+        "dxy_chg": dxy_chg,
+        "dxy_state": dxy_state,
+    }
+
+    etfs = [
+        get_etf_price_with_prepost("QQQ", "QQQ (나스닥100 ETF)"),
+        get_etf_price_with_prepost("VOO", "VOO (S&P500 ETF)"),
+        get_etf_price_with_prepost("SOXX", "SOXX (반도체 ETF)"),
+    ]
     overview["etfs"] = etfs
 
     overview["fgi"] = fetch_fgi()
@@ -406,7 +440,6 @@ def get_us_market_overview():
     overview["sector"] = {"score": score_sec, "items": sector}
 
     return overview
-
 
 def compute_market_score(overview: dict):
     if not overview:
@@ -470,8 +503,7 @@ def compute_market_score(overview: dict):
     else:
         label = "🧨 강한 Risk-off (공포장 가능성)"
 
-    detail_text = " · ".join(details)
-    return score, label, detail_text
+    return score, label, " · ".join(details)
 
 # =====================================
 # 가격 데이터 + 지표
@@ -488,13 +520,13 @@ def get_price_data(symbol, period="6mo"):
         return df
     return df[["Open", "High", "Low", "Close", "Volume"]].dropna()
 
-
 def add_indicators(df: pd.DataFrame):
     close = df["Close"]
     high = df["High"]
     low = df["Low"]
 
     df["MA5"] = close.rolling(5).mean()
+
     ma20 = close.rolling(20).mean()
     std20 = close.rolling(20).std()
     df["MA20"] = ma20
@@ -529,7 +561,6 @@ def add_indicators(df: pd.DataFrame):
 
     return df.dropna()
 
-
 def get_intraday_5m(symbol: str):
     try:
         t = yf.Ticker(symbol)
@@ -541,7 +572,7 @@ def get_intraday_5m(symbol: str):
         return pd.DataFrame()
 
 # =====================================
-# 코멘트/바이어스
+# 코멘트/판단 함수들
 # =====================================
 def short_term_bias(last_row):
     price = float(last_row["Close"])
@@ -558,15 +589,11 @@ def short_term_bias(last_row):
     score += 1 if price > ma5 else -1
     score += 1 if macd > macds else -1
 
-    if rsi > 60:
-        score += 1
-    elif rsi < 40:
-        score -= 1
+    if rsi > 60: score += 1
+    elif rsi < 40: score -= 1
 
-    if k > d and k > 50:
-        score += 1
-    elif k < d and k < 50:
-        score -= 1
+    if k > d and k > 50: score += 1
+    elif k < d and k < 50: score -= 1
 
     if score >= 3:
         return "단기 상방 우세 (며칠 내 상승 압력이 상대적으로 큼)"
@@ -575,43 +602,14 @@ def short_term_bias(last_row):
     else:
         return "단기 중립~혼조 (방향성이 뚜렷하지 않음)"
 
-
-# =====================================
-# 모드 설정
-# - A안 스윙(최근 20~30봉) 기준: swing_window를 cfg에 포함
-# =====================================
 def get_mode_config(mode_name: str):
     if mode_name == "단타":
-        return {
-            "name": "단타",
-            "period": "3mo",
-            "lookback_short": 10,
-            "lookback_long": 20,
-            "atr_mult": 1.0,
-            "swing_window": 20,   # A안(20~30봉) 중 단타는 20
-        }
+        return {"name": "단타", "period": "3mo", "lookback_short": 10, "lookback_long": 20, "atr_mult": 1.0}
     elif mode_name == "장기":
-        return {
-            "name": "장기",
-            "period": "1y",
-            "lookback_short": 20,
-            "lookback_long": 60,
-            "atr_mult": 1.6,
-            "swing_window": 30,   # 장기도 “최근 작동” 우선이라 30 유지(원하면 60으로 바꿔도 됨)
-        }
-    else:  # 스윙
-        return {
-            "name": "스윙",
-            "period": "6mo",
-            "lookback_short": 15,
-            "lookback_long": 40,
-            "atr_mult": 1.3,
-            "swing_window": 30,   # A안(20~30봉) 중 스윙은 30
-        }
+        return {"name": "장기", "period": "1y", "lookback_short": 20, "lookback_long": 60, "atr_mult": 1.6}
+    else:
+        return {"name": "스윙", "period": "6mo", "lookback_short": 15, "lookback_long": 40, "atr_mult": 1.3}
 
-# =====================================
-# 추세 기반 손절/익절 레벨
-# =====================================
 def calc_trend_stops(df: pd.DataFrame, cfg: dict):
     if df.empty:
         return None, None
@@ -623,16 +621,25 @@ def calc_trend_stops(df: pd.DataFrame, cfg: dict):
 
     recent_short = df.tail(cfg["lookback_short"])
     recent_long = df.tail(cfg["lookback_long"])
+
     swing_low = float(recent_short["Low"].min())
     box_low = float(recent_long["Low"].min())
 
     candidates = []
+
+    # 1) 스윙 저점
     if swing_low < price:
         candidates.append(swing_low * 0.995)
+
+    # 2) MA20
     if ma20 < price:
         candidates.append(ma20 * 0.99)
+
+    # 5) 박스 하단
     if box_low < price:
         candidates.append(box_low * 0.995)
+
+    # 6) ATR
     if atr is not None and atr > 0:
         atr_stop = price - cfg["atr_mult"] * atr
         if atr_stop < price:
@@ -646,7 +653,6 @@ def calc_trend_stops(df: pd.DataFrame, cfg: dict):
     sl1 = min(sl0 * 0.97, deep_candidate)
     return sl0, sl1
 
-
 def calc_trend_targets(df: pd.DataFrame, cfg: dict):
     if df.empty:
         return None, None, None
@@ -658,6 +664,7 @@ def calc_trend_targets(df: pd.DataFrame, cfg: dict):
 
     recent_short = df.tail(cfg["lookback_short"])
     recent_long = df.tail(cfg["lookback_long"])
+
     swing_high = float(recent_short["High"].max())
     box_high = float(recent_long["High"].max())
 
@@ -665,7 +672,7 @@ def calc_trend_targets(df: pd.DataFrame, cfg: dict):
     if not np.isnan(bbu):
         base_res = max(base_res, bbu * 0.98)
 
-    tp1 = (price * 1.08) if base_res <= price else base_res
+    tp1 = price * 1.08 if base_res <= price else base_res
     tp0 = price + (tp1 - price) * 0.6
     tp2 = tp1 + (tp1 - price) * 0.7
 
@@ -674,7 +681,6 @@ def calc_trend_targets(df: pd.DataFrame, cfg: dict):
         tp2 = tp1 + (tp1 - price) * 0.4
 
     return tp0, tp1, tp2
-
 
 def make_signal(row, avg_price, cfg, fgi=None, main_tp=None, main_sl=None):
     price = float(row["Close"])
@@ -694,6 +700,7 @@ def make_signal(row, avg_price, cfg, fgi=None, main_tp=None, main_sl=None):
     mild_overbought = (price > ma20 and (k > 70 or rsi > 60))
     strong_oversold = (price < bbl and k < 20 and d < 20 and rsi < 35)
 
+    # 신규 진입
     if avg_price <= 0:
         if fear and price < bbl * 1.02 and k < 30 and rsi < 45:
             return "초기 매수 관심 (공포 국면)"
@@ -704,22 +711,26 @@ def make_signal(row, avg_price, cfg, fgi=None, main_tp=None, main_sl=None):
         else:
             return "관망 (신규 진입 관점)"
 
+    # 보유 관점
     trend_up = (price > ma20 and macd > macds and rsi >= 45)
     broken_trend = (main_sl is not None and price < main_sl * 0.995)
     near_tp_zone = (main_tp is not None and price >= main_tp * 0.95)
 
     if broken_trend:
         return "손절 or 비중축소 (주요 지지/추세 이탈)"
+
     if main_tp is not None and price >= main_tp * 0.98 and strong_overbought:
         return "강한 부분매도 (수익 구간 + 추세 과열)"
     if near_tp_zone and (mild_overbought or rsi > 70):
         return "부분매도 (저항 부근 접근)"
+
     if strong_oversold and not broken_trend:
         return "합리적 분할매수 (추세 유지 + 과매도)"
+
     if trend_up:
         return "보유/추세 유지 (상방 추세 진행 중)"
-    return "관망 (부분청산·분할매수 모두 애매한 구간)"
 
+    return "관망 (부분청산·분할매수 모두 애매한 구간)"
 
 def calc_levels(df, last, cfg):
     if df.empty:
@@ -740,7 +751,6 @@ def calc_levels(df, last, cfg):
     sl0, sl1 = calc_trend_stops(df, cfg)
     return buy_low, buy_high, tp0, tp1, tp2, sl0, sl1
 
-
 def calc_gap_info(df: pd.DataFrame):
     if len(df) < 2:
         return None, None
@@ -759,20 +769,6 @@ def calc_gap_info(df: pd.DataFrame):
         comment = "갭 거의 없음 (중립적 시초)"
     return gap_pct, comment
 
-
-def calc_technical_tp_sl(df: pd.DataFrame, cfg: dict):
-    if df.empty:
-        return None, None
-    tp0, tp1, tp2 = calc_trend_targets(df, cfg)
-    sl0, sl1 = calc_trend_stops(df, cfg)
-    if tp1 is None or sl0 is None:
-        return None, None
-    price = float(df.iloc[-1]["Close"])
-    if tp1 <= price or sl0 >= price:
-        return None, None
-    return tp1, sl0
-
-
 def calc_rr_ratio(price, tp, sl):
     if tp is None or sl is None:
         return None
@@ -783,7 +779,6 @@ def calc_rr_ratio(price, tp, sl):
     if risk <= 0 or reward <= 0:
         return None
     return reward / risk
-
 
 def get_volume_profile(df: pd.DataFrame, bins: int = 5):
     recent = df.tail(20)
@@ -806,9 +801,7 @@ def get_volume_profile(df: pd.DataFrame, bins: int = 5):
         high = edges[i + 1]
         mid = (low + high) / 2
         levels.append({"mid": mid, "low": low, "high": high, "volume": total_v})
-    levels_sorted = sorted(levels, key=lambda x: x["volume"], reverse=True)
-    return levels_sorted[:3]
-
+    return sorted(levels, key=lambda x: x["volume"], reverse=True)[:3]
 
 def get_heavy_days(df: pd.DataFrame, n: int = 3):
     recent = df.tail(30)
@@ -819,7 +812,6 @@ def get_heavy_days(df: pd.DataFrame, n: int = 3):
     for idx, row in heavy.iterrows():
         res.append({"date": idx.date(), "close": float(row["Close"]), "volume": int(row["Volume"])})
     return res
-
 
 def get_intraday_5m_score(df_5m: pd.DataFrame):
     if df_5m.empty:
@@ -835,16 +827,14 @@ def get_intraday_5m_score(df_5m: pd.DataFrame):
     details = []
 
     if price > ma20_5m:
-        score += 1
-        details.append("5분봉 기준 단기 상방 유지")
+        score += 1; details.append("5분봉 기준 단기 상방 유지")
     else:
         details.append("5분봉 기준 단기 하락/조정")
 
     last10 = df_5m.tail(10)
     up_cnt = (last10["Close"] > last10["Open"]).sum()
     if up_cnt >= 6:
-        score += 1
-        details.append(f"최근 10개 캔들 중 {up_cnt}개 상승 (매수 우위)")
+        score += 1; details.append(f"최근 10개 캔들 중 {up_cnt}개 상승 (매수 우위)")
     else:
         details.append(f"최근 10개 캔들 중 상승 {up_cnt}개")
 
@@ -852,16 +842,14 @@ def get_intraday_5m_score(df_5m: pd.DataFrame):
     med_vol = vol_recent.median()
     today_vol = last["Volume"]
     if med_vol > 0 and today_vol > med_vol * 1.3:
-        score += 1
-        details.append("최근 대비 5분봉 거래량 급증")
+        score += 1; details.append("최근 대비 5분봉 거래량 급증")
     else:
         details.append("5분봉 거래량 평이")
 
     if len(df_5m) >= 2:
         prev = df_5m.iloc[-2]
         if price > prev["Close"]:
-            score += 1
-            details.append("직전 봉 대비 가격 상승")
+            score += 1; details.append("직전 봉 대비 가격 상승")
         else:
             details.append("직전 봉 대비 가격 약화")
 
@@ -875,7 +863,6 @@ def get_intraday_5m_score(df_5m: pd.DataFrame):
         comment = "장중 매도 우위 또는 관망 권장"
 
     return score, comment + " / " + " · ".join(details)
-
 
 def build_risk_alerts(market_score, last_row, gap_pct, atr14, price_move_abs):
     alerts = []
@@ -901,193 +888,12 @@ def build_risk_alerts(market_score, last_row, gap_pct, atr14, price_move_abs):
     return alerts
 
 # =====================================
-# (1) 레벨 충돌 자동 판정 + UI 분리
+# 신규 진입 스캐너 (A안: 심플)
 # =====================================
-def split_buy_zone_by_stop(buy_low, buy_high, sl0):
-    """
-    buy_low~buy_high 와 sl0가 겹치면:
-    - 유효매수구간: max(buy_low, sl0*1.005) ~ buy_high (단, 시작이 끝보다 작을 때)
-    - 리스크구간: buy_low ~ min(buy_high, sl0*0.995) (단, 시작이 끝보다 작을 때)
-    """
-    if buy_low is None or buy_high is None or sl0 is None:
-        return None
-
-    overlap = (buy_low <= sl0 <= buy_high)
-    if not overlap:
-        return {
-            "has_conflict": False,
-            "valid": (buy_low, buy_high),
-            "risk": None,
-            "msg": None,
-        }
-
-    valid_start = max(buy_low, sl0 * 1.005)
-    valid_end = buy_high
-    valid = (valid_start, valid_end) if valid_start < valid_end else None
-
-    risk_start = buy_low
-    risk_end = min(buy_high, sl0 * 0.995)
-    risk = (risk_start, risk_end) if risk_start < risk_end else None
-
-    msg = "⚠ 추가매수 구간과 손절선이 겹칩니다. **손절선 위 구간만** ‘추세 유지 분할매수’로 인정하고, 아래는 리스크 구간으로 분리했습니다."
-    return {
-        "has_conflict": True,
-        "valid": valid,
-        "risk": risk,
-        "msg": msg,
-    }
-
-# =====================================
-# (3) Plotly 차트: 스윙/박스/피보 표시 (A안: 최근 20~30봉)
-# =====================================
-def find_recent_swing(df: pd.DataFrame, window: int):
-    d = df.tail(window).copy()
-    if d.empty:
-        return None
-    swing_low = float(d["Low"].min())
-    swing_high = float(d["High"].max())
-
-    # 날짜 위치도 같이 찾기
-    low_idx = d["Low"].idxmin()
-    high_idx = d["High"].idxmax()
-    return {
-        "low": swing_low,
-        "high": swing_high,
-        "low_date": low_idx,
-        "high_date": high_idx,
-        "window": window
-    }
-
-
-def calc_box_levels(df: pd.DataFrame, lookback_long: int):
-    d = df.tail(lookback_long)
-    if d.empty:
-        return None, None
-    return float(d["Low"].min()), float(d["High"].max())
-
-
-def fib_levels(low: float, high: float):
-    if low is None or high is None or high <= low:
-        return None
-    diff = high - low
-    levels = {
-        "0.236": high - diff * 0.236,
-        "0.382": high - diff * 0.382,
-        "0.5":   high - diff * 0.5,
-        "0.618": high - diff * 0.618,
-        "0.786": high - diff * 0.786,
-    }
-    return levels
-
-
-def plot_chart_with_levels(df: pd.DataFrame, cfg: dict):
-    if df.empty:
-        st.caption("차트 데이터 부족")
-        return
-
-    view = df.tail(160).copy()
-    view.reset_index(inplace=True)
-    x = view["Date"] if "Date" in view.columns else view.iloc[:, 0]
-
-    fig = go.Figure()
-
-    # 라인: Close
-    fig.add_trace(go.Scatter(x=x, y=view["Close"], mode="lines", name="Close"))
-    fig.add_trace(go.Scatter(x=x, y=view["MA20"], mode="lines", name="MA20"))
-    fig.add_trace(go.Scatter(x=x, y=view["BBU"], mode="lines", name="BBU"))
-    fig.add_trace(go.Scatter(x=x, y=view["BBL"], mode="lines", name="BBL"))
-
-    sw = find_recent_swing(df, cfg["swing_window"])
-    box_low, box_high = calc_box_levels(df, cfg["lookback_long"])
-
-    # 박스 라인
-    if box_low is not None and box_high is not None:
-        fig.add_hline(y=box_low, line_dash="dot", annotation_text="BOX LOW", annotation_position="bottom left")
-        fig.add_hline(y=box_high, line_dash="dot", annotation_text="BOX HIGH", annotation_position="top left")
-
-    # 스윙 고/저 (A안: 최근 20~30봉)
-    if sw is not None:
-        fig.add_hline(y=sw["low"], line_dash="dash", annotation_text=f"SWING LOW ({cfg['swing_window']})", annotation_position="bottom right")
-        fig.add_hline(y=sw["high"], line_dash="dash", annotation_text=f"SWING HIGH ({cfg['swing_window']})", annotation_position="top right")
-
-        fib = fib_levels(sw["low"], sw["high"])
-        if fib:
-            # 피보나치 레벨들
-            for k, v in fib.items():
-                fig.add_hline(y=v, line_dash="solid", opacity=0.35, annotation_text=f"FIB {k}", annotation_position="bottom left")
-
-    fig.update_layout(
-        height=520,
-        margin=dict(l=10, r=10, t=35, b=10),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        xaxis_title="",
-        yaxis_title="가격",
-    )
-
-    # 줌/드래그 가능
-    st.plotly_chart(fig, use_container_width=True)
-
-# =====================================
-# (2) 신규 진입 스캐너: 선정 이유 + 시장점수 기반 필터 자동 조절 + TOP3 강조
-# =====================================
-def scan_rule_by_market_score(market_score: int):
-    """
-    시장 점수에 따라 스캐너를 보수/공격적으로 자동 조절
-    """
-    if market_score <= -4:
-        return {"band_out_low": 0.98, "band_out_high": 1.03, "max_rsi": 58, "need_bias": "상방"}  # 매우 보수
-    elif market_score <= -1:
-        return {"band_out_low": 0.97, "band_out_high": 1.05, "max_rsi": 62, "need_bias": "상방/중립"}  # 보수
-    elif market_score <= 2:
-        return {"band_out_low": 0.97, "band_out_high": 1.06, "max_rsi": 65, "need_bias": "상방/중립"}  # 중립
-    else:
-        return {"band_out_low": 0.96, "band_out_high": 1.08, "max_rsi": 68, "need_bias": "상방/중립"}  # 완화
-
-
-def build_pick_reasons(last_row, buy_low, buy_high):
-    price = float(last_row["Close"])
-    ma20 = float(last_row["MA20"])
-    rsi = float(last_row["RSI14"])
-    k = float(last_row["STOCH_K"])
-    d = float(last_row["STOCH_D"])
-    macd = float(last_row["MACD"])
-    macds = float(last_row["MACD_SIGNAL"])
-
-    reasons = []
-
-    # 1) 매수 밴드 근접
-    if buy_low is not None and buy_high is not None:
-        center = (buy_low + buy_high) / 2
-        dist = abs(price - center) / price * 100
-        if dist <= 1.2:
-            reasons.append(f"매수밴드 중심 근접(거리 {dist:.1f}%)")
-        elif dist <= 2.5:
-            reasons.append(f"매수밴드 근처(거리 {dist:.1f}%)")
-
-    # 2) RSI
-    if 43 <= rsi <= 57:
-        reasons.append(f"RSI {rsi:.0f} (무리 없는 구간)")
-    elif rsi < 43:
-        reasons.append(f"RSI {rsi:.0f} (과매도 쪽)")
-    else:
-        reasons.append(f"RSI {rsi:.0f} (과열 쪽 아님)")
-
-    # 3) 모멘텀
-    if macd > macds:
-        reasons.append("MACD 상방(전환/추세 우호)")
-    if k > d and k > 50:
-        reasons.append("스토캐스틱 상방 모멘텀")
-
-    # 너무 길면 3개까지만
-    return reasons[:3]
-
-
 def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
     results = []
-
     ov = get_us_market_overview()
     market_score, _, _ = compute_market_score(ov)
-    rule = scan_rule_by_market_score(market_score)
 
     for sym in SCAN_CANDIDATES:
         df = get_price_data(sym, cfg["period"])
@@ -1102,37 +908,33 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
         rsi = float(last["RSI14"])
 
         buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, cfg)
-        if buy_low is None or buy_high is None:
+        if buy_low is None or buy_high is None or tp1 is None:
             continue
 
-        # 시장 점수 기반 필터(보수/완화)
-        if price < buy_low * rule["band_out_low"] or price > buy_high * rule["band_out_high"]:
+        # 매수 밴드 중심과 거리
+        band_center = (buy_low + buy_high) / 2
+        dist_band_pct = abs(price - band_center) / price * 100
+
+        # 조건: 밴드 근처 + RSI 과열 제외
+        if price < buy_low * 0.97 or price > buy_high * 1.05:
             continue
-        if rsi > rule["max_rsi"]:
+        if rsi > 65:
             continue
 
         bias = short_term_bias(last)
-        if rule["need_bias"] == "상방":
-            if "상방" not in bias:
-                continue
-        else:
-            if ("상방" not in bias) and ("중립" not in bias):
-                continue
-
-        # 점수: (1) bias (2) 밴드 중심 거리 (3) RSI 중앙값 근접
-        center = (buy_low + buy_high) / 2
-        dist_band_pct = abs(price - center) / price * 100
-
         score = 0
         if "상방" in bias:
             score += 2
         elif "중립" in bias:
             score += 1
 
-        score += max(0, 3 - dist_band_pct)  # 0~3
+        score += max(0, 3 - dist_band_pct)
         score += max(0, 2 - abs(rsi - 50) / 10)
 
-        reasons = build_pick_reasons(last, buy_low, buy_high)
+        # 신규진입 손절 가정(매수 가설 실패 기준)
+        sl0_new = buy_low * 0.97
+
+        rr = calc_rr_ratio(price, tp1, sl0_new)
 
         results.append({
             "symbol": sym,
@@ -1143,13 +945,13 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
             "buy_low": buy_low,
             "buy_high": buy_high,
             "tp1": tp1,
-            "sl0": sl0,
-            "score": float(score),
-            "reasons": reasons,
+            "sl0": sl0_new,
+            "rr": rr,
+            "score": score,
         })
 
     results_sorted = sorted(results, key=lambda x: x["score"], reverse=True)
-    return market_score, rule, results_sorted[:max_results]
+    return market_score, results_sorted[:max_results]
 
 # =====================================
 # 세션 상태
@@ -1171,7 +973,7 @@ if "scroll_to_result" not in st.session_state:
 if "scan_results" not in st.session_state:
     st.session_state["scan_results"] = None
 
-# pending_symbol 처리
+# 스캐너/즐겨찾기에서 '바로 분석' 눌렀을 때 반영
 if st.session_state.get("pending_symbol"):
     ps = st.session_state["pending_symbol"]
     st.session_state["symbol_input"] = ps
@@ -1180,13 +982,14 @@ if st.session_state.get("pending_symbol"):
     st.session_state["pending_symbol"] = ""
 
 # =====================================
-# 레이아웃
+# 레이아웃: 메인 + 사이드
 # =====================================
 col_main, col_side = st.columns([3, 1])
 
 # ---- 오른쪽: 즐겨찾기 / 최근검색 ----
 with col_side:
     st.subheader("⭐ 즐겨찾기 & 최근 종목")
+
     tab_fav, tab_recent = st.tabs(["⭐ 즐겨찾기", "🕒 최근 검색"])
     clicked_symbol = None
 
@@ -1216,9 +1019,9 @@ with col_side:
 # ---- 왼쪽: 메인 ----
 with col_main:
     st.title("📈 내 주식 자동판독기")
-    st.caption("시장 개요 + 개별 종목 판독 + 레이어/갭/ATR/장중 흐름 + (A안) 스윙/박스/피보 차트")
+    st.caption("시장 개요 + 개별 종목 판독 + 레이어/갭/ATR/장중 흐름을 한 화면에서 확인")
 
-    # 1) 시장 개요
+    # 1) 미국 시장 개요 + 레이어
     with st.expander("🌍 미국 시장 실시간 흐름 (보조지표 + 레이어)", expanded=True):
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
@@ -1242,7 +1045,8 @@ with col_main:
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            last = nas.get("last"); chg = nas.get("chg_pct")
+            last = nas.get("last")
+            chg = nas.get("chg_pct")
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
             st.markdown('<div class="metric-label">나스닥 선물</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="metric-value">{last:.1f}</div>' if last is not None else '<div class="metric-value">N/A</div>', unsafe_allow_html=True)
@@ -1251,7 +1055,8 @@ with col_main:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with col2:
-            last = es.get("last"); chg = es.get("chg_pct")
+            last = es.get("last")
+            chg = es.get("chg_pct")
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
             st.markdown('<div class="metric-label">S&P500 선물</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="metric-value">{last:.1f}</div>' if last is not None else '<div class="metric-value">N/A</div>', unsafe_allow_html=True)
@@ -1274,7 +1079,8 @@ with col_main:
 
         col4, col5, col6 = st.columns(3)
         with col4:
-            us10y = rf.get("us10y"); us10y_chg = rf.get("us10y_chg")
+            us10y = rf.get("us10y")
+            us10y_chg = rf.get("us10y_chg")
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
             st.markdown('<div class="metric-label">미 10년물</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="metric-value">{us10y:.2f}%</div>' if us10y is not None else '<div class="metric-value">N/A</div>', unsafe_allow_html=True)
@@ -1283,7 +1089,8 @@ with col_main:
             st.markdown('</div>', unsafe_allow_html=True)
 
         with col5:
-            dxy = rf.get("dxy"); dxy_chg = rf.get("dxy_chg")
+            dxy = rf.get("dxy")
+            dxy_chg = rf.get("dxy_chg")
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
             st.markdown('<div class="metric-label">달러 인덱스 (DXY)</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="metric-value">{dxy:.2f}</div>' if dxy is not None else '<div class="metric-value">N/A</div>', unsafe_allow_html=True)
@@ -1304,8 +1111,12 @@ with col_main:
             cols_etf = st.columns(3)
             for i, e in enumerate(etfs):
                 with cols_etf[i]:
-                    sym = e.get("symbol"); current = e.get("current"); chg = e.get("chg_pct")
-                    basis = e.get("basis"); state = e.get("market_state", "")
+                    sym = e.get("symbol")
+                    current = e.get("current")
+                    chg = e.get("chg_pct")
+                    basis = e.get("basis")
+                    state = e.get("market_state", "")
+
                     st.markdown('<div class="metric-card">', unsafe_allow_html=True)
                     st.markdown(f'<div class="metric-label">{sym}</div>', unsafe_allow_html=True)
                     value_str = f"{current:.2f}" if current is not None else "N/A"
@@ -1321,58 +1132,77 @@ with col_main:
 
         st.markdown("---")
 
-        # BIG TECH
+        # BIG TECH LAYER
         bt_score = bigtech_layer.get("score", 0)
         bt_items = bigtech_layer.get("items", [])
         st.markdown('<div class="card-soft">', unsafe_allow_html=True)
         st.markdown('<div class="layer-title-en">BIG TECH LAYER</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="chip chip-green">빅테크 강도 점수: {bt_score}</div>', unsafe_allow_html=True)
         for it in bt_items:
-            sym = it["symbol"]; chg = it["chg"]
+            sym = it["symbol"]
+            chg = it["chg"]
             if chg is None:
                 continue
             sign = "+" if chg > 0 else ""
             cls = "layer-chg-pos" if chg > 0 else ("layer-chg-neg" if chg < 0 else "layer-chg-flat")
-            st.markdown(f'<div class="layer-row"><span class="layer-symbol">{sym}</span><span class="{cls}">{sign}{chg:.2f}%</span></div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="layer-row"><span class="layer-symbol">{sym}</span>'
+                f'<span class="{cls}">{sign}{chg:.2f}%</span></div>',
+                unsafe_allow_html=True,
+            )
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # SECTOR
+        # SECTOR ROTATION LAYER
         sec_score = sector_layer.get("score", 0)
         sec_items = sector_layer.get("items", [])
         st.markdown('<div class="card-soft">', unsafe_allow_html=True)
         st.markdown('<div class="layer-title-en">SECTOR ROTATION LAYER</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="chip chip-blue">섹터 점수: {sec_score}</div>', unsafe_allow_html=True)
         for it in sec_items:
-            label = it["label"]; chg = it["chg"]
+            label = it["label"]
+            chg = it["chg"]
             if chg is None:
                 continue
             sign = "+" if chg > 0 else ""
             cls = "layer-chg-pos" if chg > 0 else ("layer-chg-neg" if chg < 0 else "layer-chg-flat")
-            st.markdown(f'<div class="layer-row"><span class="layer-symbol">{label}</span><span class="{cls}">{sign}{chg:.2f}%</span></div>', unsafe_allow_html=True)
-        st.markdown('<div class="small-muted">※ 섹터별 강도 흐름을 통해 성장/방어/에너지 쏠림을 한 눈에 체크.</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="layer-row"><span class="layer-symbol">{label}</span>'
+                f'<span class="{cls}">{sign}{chg:.2f}%</span></div>',
+                unsafe_allow_html=True,
+            )
+        st.markdown('<div class="small-muted">※ 섹터별 강도 흐름을 통해 쏠림을 한 눈에 체크.</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("---")
 
-    # 2) 종목 판독기
+    # 2) 내 종목 자동 판독기
     st.subheader("🔍 내 종목 자동 판독기 + 실전 보조지표")
 
     col_top1, col_top2 = st.columns(2)
     with col_top1:
-        user_symbol = st.text_input("종목 이름/티커 (예: NVDA, 엔비디아, META, TQQQ)", key="symbol_input")
+        user_symbol = st.text_input(
+            "종목 이름/티커 (예: NVDA, 엔비디아, META, TQQQ)",
+            key="symbol_input",
+        )
         holding_type = st.radio("보유 상태", ["보유 중", "신규 진입 검토"], horizontal=True)
+
     with col_top2:
         mode_name = st.selectbox("투자 모드 선택", ["단타", "스윙", "장기"], index=1)
-        commission_pct = st.number_input("왕복 수수료/비용(%) (기본 0.2% 가정)", min_value=0.0, max_value=2.0, value=0.2, step=0.05)
+        commission_pct = st.number_input(
+            "왕복 수수료/비용(%) (기본 0.2% 가정)",
+            min_value=0.0, max_value=2.0,
+            value=0.2, step=0.05,
+        )
 
     cfg = get_mode_config(mode_name)
 
-    candidates = sorted(set(POPULAR_SYMBOLS + st.session_state["recent_symbols"]))
     prefix = (user_symbol or "").strip().upper().replace(" ", "")
+    candidates = sorted(set(POPULAR_SYMBOLS + st.session_state["recent_symbols"]))
     suggestions = [s for s in candidates if s.startswith(prefix)] if prefix else []
     if suggestions:
         st.caption("자동완성 도움: " + ", ".join(suggestions[:6]))
 
+    # 보유 정보
     col_mid1, col_mid2 = st.columns(2)
     avg_price = 0.0
     shares = 0
@@ -1382,101 +1212,76 @@ with col_main:
         with col_mid2:
             shares = st.number_input("보유 수량 (주)", min_value=0, value=0, step=1)
 
-    # ---- 분석 실행 버튼 ----
+    # 분석하기
     run_click = st.button("🚀 분석하기", key="run_analyze")
     run_from_side = st.session_state.get("run_from_side", False)
-    run = bool(run_click or run_from_side)
+    run = run_click or run_from_side
     st.session_state["run_from_side"] = False
 
-    # ---- 스캐너(번잡 방지: expander + 실행 시에만 노출) ----
-    with st.expander("🛰 신규 진입 스캐너 (A안: 심플 + 선정이유 + TOP3)", expanded=False):
-        st.caption("※ 시장 점수에 따라 스캐너 조건이 자동으로 보수/완화됩니다.")
-        scan_click = st.button("📊 스캐너 실행", key="run_scan")
+    if run:
+        st.session_state["scroll_to_result"] = True
+
+    # ========== 스캐너 (번잡함 방지: Expander + 닫기 버튼) ==========
+    with st.expander("🛰 신규 진입 스캐너 (간단 버전)", expanded=False):
+        col_s1, col_s2 = st.columns([1, 1])
+        with col_s1:
+            scan_click = st.button("📊 스캐너 실행", key="run_scan")
+        with col_s2:
+            close_scan = st.button("🧹 결과 닫기", key="close_scan")
+
+        if close_scan:
+            st.session_state["scan_results"] = None
+            st.success("스캐너 결과를 닫았습니다.")
+            st.rerun()
+
         if scan_click:
             with st.spinner("신규 진입 후보 종목 스캔 중..."):
-                scan_mkt_score, scan_rule, scan_list = scan_new_entry_candidates(cfg)
-            st.session_state["scan_results"] = {
-                "market_score": scan_mkt_score,
-                "rule": scan_rule,
-                "items": scan_list,
-            }
+                scan_mkt_score, scan_list = scan_new_entry_candidates(cfg)
+            st.session_state["scan_results"] = {"market_score": scan_mkt_score, "items": scan_list}
 
         scan_data = st.session_state.get("scan_results")
         if scan_data:
             scan_mkt_score = scan_data["market_score"]
-            scan_rule = scan_data["rule"]
             scan_list = scan_data["items"]
 
-            st.markdown("#### 결과")
-            st.write(f"- 시장 점수: **{scan_mkt_score} / 8**")
-            st.write(f"- 스캐너 기준(자동): 밴드범위(하단 {scan_rule['band_out_low']:.2f}배 / 상단 {scan_rule['band_out_high']:.2f}배), RSI 상한 {scan_rule['max_rsi']}")
-
             if scan_mkt_score <= -4:
-                st.warning("시장 점수가 강한 Risk-off 구간이라, 신규 진입은 특히 보수적으로 볼 필요가 있습니다.")
+                st.warning("시장 점수가 강한 Risk-off 구간입니다. 신규 진입은 특히 보수적으로.")
 
             if not scan_list:
                 st.write("조건을 만족하는 신규 진입 후보 종목이 없습니다.")
             else:
-                st.caption(f"총 **{len(scan_list)}개** 후보 (TOP3 강조)")
+                st.caption(f"총 **{len(scan_list)}개** 종목이 조건을 만족했습니다.")
                 scan_clicked_symbol = None
 
-                for idx, item in enumerate(scan_list, start=1):
+                for item in scan_list:
                     sym = item["symbol"]
                     price = item["price"]
                     bias = item["bias"]
                     score_val = item["score"]
-                    reasons = item.get("reasons", [])
+                    rr = item.get("rr")
 
-                    if idx <= 3:
-                        st.markdown(f"### 🏆 TOP {idx}: **{sym}**  (스코어 {score_val:.1f})")
-                    else:
-                        st.markdown(f"**{sym}**  (스코어 {score_val:.1f})")
-
-                    st.write(f"- 현재가: **{price:.2f} USD**")
-                    st.write(f"- 단기 흐름: {bias}")
-                    if reasons:
-                        st.write("- 선정 이유: " + " / ".join(reasons))
-
+                    rr_txt = f"{rr:.2f}:1" if rr is not None else "N/A"
+                    st.markdown(
+                        f"**{sym}** | 현재가 **{price:.2f}** | 단기흐름: {bias} | 스코어 **{score_val:.1f}** | 손익비 {rr_txt}"
+                    )
                     go = st.button(f"🔍 {sym} 바로 분석", key=f"scan_go_{sym}")
                     if go:
                         scan_clicked_symbol = sym
-
-                    st.markdown("---")
 
                 if scan_clicked_symbol is not None:
                     st.session_state["pending_symbol"] = scan_clicked_symbol
                     st.session_state["scroll_to_result"] = True
                     st.rerun()
 
-    # ---- 분석 실행 안 했으면 중단 ----
+    # 분석 실행 안했으면 종료
     if not run:
         st.stop()
-
-    # ==========================
-    # 자동 스크롤 앵커(분석 버튼 누르면 결과로 이동)
-    # ==========================
-    st.session_state["scroll_to_result"] = True
-    st.markdown('<div id="analysis_result_anchor"></div>', unsafe_allow_html=True)
-    if st.session_state.get("scroll_to_result", False):
-        st.markdown(
-            """
-            <script>
-            setTimeout(function () {
-                var el = document.getElementById("analysis_result_anchor");
-                if (el) { el.scrollIntoView({behavior: "smooth", block: "start"}); }
-            }, 250);
-            </script>
-            """,
-            unsafe_allow_html=True,
-        )
-    st.session_state["scroll_to_result"] = False
 
     # ==========================
     # 실제 분석 로직
     # ==========================
     symbol = normalize_symbol(user_symbol)
-    display_name = user_symbol or ""
-    st.session_state["selected_symbol"] = symbol
+    display_name = user_symbol.strip() if user_symbol else ""
 
     if not symbol:
         st.error("❌ 종목 이름 또는 티커가 비어있습니다. 다시 입력해 주세요.")
@@ -1499,6 +1304,7 @@ with col_main:
         last = df.iloc[-1]
         df_5m = get_intraday_5m(symbol)
 
+    # 최근 종목 기록
     if symbol not in st.session_state["recent_symbols"]:
         st.session_state["recent_symbols"].append(symbol)
         st.session_state["recent_symbols"] = st.session_state["recent_symbols"][-30:]
@@ -1509,15 +1315,15 @@ with col_main:
 
     buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, cfg)
 
-    # 신규 진입일 때: 손절은 ‘매수 가설 실패’ 기준으로 보수적으로
+    # 신규 진입이면 손절 로직을 “매수 가설 실패” 기준으로 재정의
     if holding_type == "신규 진입 검토" and buy_low is not None:
         sl0 = buy_low * 0.97
         sl1 = buy_low * 0.94
 
-    tech_tp, tech_sl = calc_technical_tp_sl(df, cfg)
-    rr = calc_rr_ratio(price, tech_tp, tech_sl)
-    bias_comment = short_term_bias(last)
+    # 손익비(기술적 TP/SL)
+    rr = calc_rr_ratio(price, tp1, sl0)
 
+    bias_comment = short_term_bias(last)
     gap_pct, gap_comment = calc_gap_info(df)
     atr14 = float(last["ATR14"]) if "ATR14" in last and not np.isnan(last["ATR14"]) else None
     price_move_abs = abs(float(last["Close"]) - float(last["Open"])) if atr14 is not None else None
@@ -1526,11 +1332,12 @@ with col_main:
     heavy_days = get_heavy_days(df)
     intraday_sc, intraday_comment = get_intraday_5m_score(df_5m)
 
-    score_mkt_now, _, _ = compute_market_score(ov)
-    alerts = build_risk_alerts(score_mkt_now, last, gap_pct, atr14, price_move_abs)
+    score_mkt, _, _ = compute_market_score(ov)
+    alerts = build_risk_alerts(score_mkt, last, gap_pct, atr14, price_move_abs)
 
     ext_price = get_last_extended_price(symbol)
 
+    # 즐겨찾기
     is_fav = symbol in st.session_state["favorite_symbols"]
     fav_new = st.checkbox("⭐ 이 종목 즐겨찾기", value=is_fav)
     if fav_new and not is_fav:
@@ -1538,11 +1345,28 @@ with col_main:
     elif (not fav_new) and is_fav:
         st.session_state["favorite_symbols"].remove(symbol)
 
-    signal = make_signal(last, avg_price if holding_type == "보유 중" else 0.0, cfg, fgi, main_tp=tp1, main_sl=sl0)
+    # 추천 액션
+    eff_avg_price = avg_price if holding_type == "보유 중" else 0.0
+    signal = make_signal(last, eff_avg_price, cfg, fgi, main_tp=tp1, main_sl=sl0)
 
     # ==========================
-    # UI 출력
+    # 결과 출력 + 자동 스크롤
     # ==========================
+    st.markdown('<div id="analysis_result_anchor"></div>', unsafe_allow_html=True)
+    if st.session_state.get("scroll_to_result", False):
+        st.markdown(
+            """
+            <script>
+              setTimeout(function () {
+                var el = document.getElementById("analysis_result_anchor");
+                if (el) { el.scrollIntoView({behavior: "smooth", block: "start"}); }
+              }, 250);
+            </script>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.session_state["scroll_to_result"] = False
+
     st.subheader("🧾 요약")
     st.write(f"- 입력 종목: **{display_name}** → 실제 티커: **{symbol}**")
     if fgi is not None:
@@ -1556,42 +1380,35 @@ with col_main:
         if ext_price is not None:
             diff_pct = (ext_price - price) / price * 100
             sign = "+" if diff_pct >= 0 else ""
-            st.caption(f"시외/프리·애프터 포함 최근가: {ext_price:.2f} ({sign}{diff_pct:.2f}%)")
+            st.caption(f"시외 포함 최근가: {ext_price:.2f} ({sign}{diff_pct:.2f}%)")
 
     with col_b:
         st.markdown(
             f"""
-<div class="card-soft-sm">
-  <div class="small-muted">MODE</div>
-  <div style="font-size:1.05rem;font-weight:600;">{cfg['name']} 모드</div>
-  <div class="small-muted">차트 기간: {cfg['period']} · 스윙 기준: 최근 {cfg['swing_window']}봉(A안)</div>
-</div>
-""",
+            <div class="card-soft-sm">
+              <div class="small-muted">MODE</div>
+              <div style="font-size:1.05rem;font-weight:600;">{cfg['name']} 모드</div>
+              <div class="small-muted">차트 기간: {cfg['period']} · 손절/익절: 추세·지지/저항 기반</div>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
 
     with col_c:
         st.markdown(
             f"""
-<div class="card-soft-sm">
-  <div class="small-muted">POSITION</div>
-  <div>보유 상태: <b>{holding_type}</b></div>
-  <div class="small-muted">보유 중이면 평단/손익도 함께 표시</div>
-</div>
-""",
+            <div class="card-soft-sm">
+              <div class="small-muted">POSITION</div>
+              <div>보유 상태: <b>{holding_type}</b></div>
+              <div class="small-muted">보유중이면 평단/수익률 계산, 신규진입이면 진입/손절 가정 표시</div>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
 
     if holding_type == "보유 중" and avg_price > 0:
         st.write(f"- 평단가: **{avg_price:.2f} USD**")
         st.write(f"- 수익률: **{profit_pct:.2f}%**")
-        # 평단 회복 필요 %
-        if price < avg_price:
-            need = (avg_price - price) / price * 100
-            st.caption(f"※ 평단 회복까지 약 **+{need:.2f}%** 필요")
-        else:
-            ahead = (price - avg_price) / avg_price * 100
-            st.caption(f"※ 평단 대비 약 **+{ahead:.2f}%** 위")
 
     if holding_type == "보유 중" and shares > 0 and avg_price > 0:
         rate = get_usdkrw_rate()
@@ -1610,72 +1427,41 @@ with col_main:
         st.write(f"**단기 방향성:** {bias_comment}")
     with col_sig2:
         if rr is not None:
-            st.metric("손익비 (기술적 TP/SL 기준)", f"{rr:.2f} : 1")
+            st.metric("손익비 (TP=1차 목표 / SL=0차 손절)", f"{rr:.2f} : 1")
             if rr >= 1.5:
-                st.caption("👉 기술적 지지/저항 기준으로 손익비 양호")
+                st.caption("👉 기술적 기준 손익비 양호")
             elif rr <= 1.0:
-                st.caption("⚠ 손익비 비우호 (손절폭이 상대적으로 큼)")
+                st.caption("⚠ 손익비 불리 (손절폭이 상대적으로 큼)")
         else:
-            st.caption("손익비 계산 불가 (TP/SL 기준이 애매)")
+            st.caption("손익비 계산 불가 (TP/SL이 애매한 위치)")
 
-    # ==========================
-    # (1) 가격 레벨 + 충돌 자동 분리 표시
-    # ==========================
     st.subheader("📌 가격 레벨 (진입/익절/손절 가이드)")
 
     if holding_type == "보유 중":
         if buy_low is not None and buy_high is not None:
-            # 충돌 판정
-            split = split_buy_zone_by_stop(buy_low, buy_high, sl0)
-            if split and split["has_conflict"]:
-                st.warning(split["msg"])
-                if split["valid"]:
-                    v0, v1 = split["valid"]
-                    st.write(f"- ✅ **추세 유지 분할매수 유효구간(손절선 위만): {v0:.2f} ~ {v1:.2f} USD**")
-                if split["risk"]:
-                    r0, r1 = split["risk"]
-                    st.write(f"- ❌ **리스크 구간(손절선 근접/하회): {r0:.2f} ~ {r1:.2f} USD**")
-                st.caption("※ 리스크 구간에서는 ‘추가매수’가 아니라 ‘손절/비중조절’을 우선 검토")
-            else:
-                st.write(f"- 추가매수 관심 구간(추세 유지시): **{buy_low:.2f} ~ {buy_high:.2f} USD**")
-
+            st.write(f"- 추가매수 관심 구간(추세 유지시): **{buy_low:.2f} ~ {buy_high:.2f} USD**")
         if tp0 is not None:
             st.write(f"- 0차 매도(부분 익절) 추천가: **{tp0:.2f} USD**")
         if tp1 is not None:
             st.write(f"- 1차 매도(주요 저항/목표): **{tp1:.2f} USD**")
         if tp2 is not None:
             st.write(f"- 2차 매도(확장 목표/과열 구간): **{tp2:.2f} USD**")
-
         if sl0 is not None:
             st.write(f"- 0차 손절가(추세 이탈 기준): **{sl0:.2f} USD**")
         if sl1 is not None:
             st.write(f"- 1차 손절가(최종 방어선): **{sl1:.2f} USD**")
-
     else:
         if buy_low is not None and buy_high is not None:
             entry1 = min(buy_high, buy_low * 1.03)
             entry2 = buy_low
             st.write(f"- 1차 진입(소량 매수) 추천가: **{entry1:.2f} USD** 근처")
             st.write(f"- 2차 분할매수(조정 시): **{entry2:.2f} USD** 이하 구간")
-            st.caption("※ 신규 진입은 1·2차로 나누어 분할 매수 기준")
+            st.caption("※ 신규 진입은 1·2차 분할 진입 기준입니다.")
+        if sl0 is not None:
+            st.write(f"- 기본 손절(매수 가설 실패): **{sl0:.2f} USD**")
+        if sl1 is not None:
+            st.write(f"- 최종 방어선: **{sl1:.2f} USD**")
 
-            if sl0 is not None:
-                st.write(f"- 기본 손절/가설 실패 기준: **{sl0:.2f} USD**")
-            if sl1 is not None:
-                st.write(f"- 깊은 손절/최종 방어선: **{sl1:.2f} USD**")
-
-        st.markdown("#### 신규 진입 관련 리스크·리워드 요약")
-        if tech_tp is not None and tech_sl is not None:
-            up_side = (tech_tp - price) / price * 100
-            down_side = (price - tech_sl) / price * 100
-            st.write(f"- 위쪽 잠재 수익 여지: **+{up_side:.2f}%** (기술적 저항 기준)")
-            st.write(f"- 아래쪽 기술적 손실 여지: **-{down_side:.2f}%** (추세 손절/지지선 기준)")
-        else:
-            st.caption("기술적 TP/SL이 애매해 리스크·리워드 요약이 어렵습니다.")
-
-    # ==========================
-    # 보조 지표/리스크
-    # ==========================
     st.subheader("📊 갭 · 변동성 · 장중 흐름")
     col_gap, col_atr, col_intra = st.columns(3)
     with col_gap:
@@ -1683,7 +1469,7 @@ with col_main:
             st.metric("전일 대비 갭(시가 기준)", f"{gap_pct:.2f}%")
             st.caption(gap_comment)
         else:
-            st.caption("갭 정보 계산 불가")
+            st.caption("갭 정보 계산 불가(데이터 부족)")
 
     with col_atr:
         if atr14 is not None:
@@ -1692,7 +1478,7 @@ with col_main:
                 ratio = price_move_abs / atr14
                 st.caption(f"오늘 캔들 몸통 크기: ATR의 {ratio:.2f}배")
         else:
-            st.caption("ATR 계산 불가")
+            st.caption("ATR 계산 불가(데이터 부족)")
 
     with col_intra:
         if intraday_sc is not None:
@@ -1707,27 +1493,24 @@ with col_main:
         if vp_levels:
             st.markdown("**주요 매물대 (가격대별 거래량 상위)**")
             for lv in vp_levels:
-                st.write(f"- **{lv['low']:.2f} ~ {lv['high']:.2f} USD** (중심 {lv['mid']:.2f})")
+                st.write(
+                    f"- **{lv['low']:.2f} ~ {lv['high']:.2f} USD** (중심 {lv['mid']:.2f}) – 거래량 많은 구간"
+                )
         else:
-            st.caption("매물대 데이터 부족")
+            st.caption("매물대 분석 데이터 부족")
 
     with col_vp2:
         if heavy_days:
             st.markdown("**큰손 추정 구간 (거래량 상위 일자)**")
             for h in heavy_days:
-                st.write(f"- {h['date']} 종가 **{h['close']:.2f} USD**")
+                st.write(f"- {h['date']} 종가 **{h['close']:.2f} USD** – 거래량 상위일")
         else:
-            st.caption("거래량 상위 일자 찾기 어려움")
+            st.caption("거래량 상위 일자 추출 어려움")
 
     st.subheader("⚠ 리스크 경고 체크리스트")
     for a in alerts:
         st.write(a)
 
-    # ==========================
-    # (3) Plotly 차트
-    # ==========================
-    st.subheader(f"📈 실전 차트 (Plotly) — 스윙/박스/피보 자동 표시 (A안: 최근 {cfg['swing_window']}봉)")
-    plot_chart_with_levels(df[["Open","High","Low","Close","Volume","MA20","BBL","BBU"]].copy(), cfg)
-
-if __name__ == "__main__":
-    pass
+    st.subheader("📈 가격/볼린저밴드 차트 (단순 표시)")
+    chart_df = df[["Close", "MA20", "BBL", "BBU"]].tail(120)
+    st.line_chart(chart_df)
