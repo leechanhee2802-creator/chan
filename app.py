@@ -146,7 +146,7 @@ p, label, span, div { font-size: 0.94rem; color: #111827 !important; }
     font-size:0.78rem; font-weight:600;
 }
 
-/* ✅ 현재가 큰 표시(요청 반영) */
+/* ✅ 현재가 크게/굵게 (요청 반영) */
 .price-big-card{
     background: rgba(255,255,255,0.96);
     border-radius: 22px;
@@ -161,7 +161,7 @@ p, label, span, div { font-size: 0.94rem; color: #111827 !important; }
     letter-spacing: 0.02em;
 }
 .price-big-value{
-    font-size: 2.2rem;
+    font-size: 2.25rem;
     font-weight: 900;
     margin-top: 4px;
     color: #111827 !important;
@@ -229,11 +229,14 @@ KOREAN_TICKER_MAP = {
     "브로드컴": "AVGO",
     "에이엠디": "AMD", "AMD": "AMD",
     "TSMC": "TSM", "티에스엠씨": "TSM",
+
     "오라클": "ORCL",
     "페이팔": "PYPL",
+
     "QQQ": "QQQ", "나스닥ETF": "QQQ", "나스닥100": "QQQ",
     "SPY": "SPY", "S&P500": "SPY", "SP500": "SPY",
     "VOO": "VOO",
+
     "SOXL": "SOXL", "반도체3배": "SOXL",
     "SOXS": "SOXS", "반도체인버스3배": "SOXS",
     "TQQQ": "TQQQ", "나스닥3배": "TQQQ",
@@ -243,6 +246,7 @@ KOREAN_TICKER_MAP = {
     "SPXS": "SPXS", "S&P인버스3배": "SPXS",
     "LABU": "LABU", "바이오3배": "LABU",
     "LABD": "LABD", "바이오인버스3배": "LABD",
+
     "비트코인ETF": "IBIT",
     "아이쉐어즈비트코인": "IBIT",
 }
@@ -830,7 +834,6 @@ def make_signal(last, holding_type, fgi, tp1, sl0):
             return "보유/추세 유지 (상방 추세)"
         return "관망 (애매 구간)"
     else:
-        # 신규 진입
         if fear and strong_oversold:
             return "초기 매수 관심 (공포+과매도)"
         if strong_oversold:
@@ -843,7 +846,7 @@ def make_signal(last, holding_type, fgi, tp1, sl0):
 
 
 # =====================================
-# 신규 진입 스캐너 (A안: 심플 + 결과 접기)
+# 신규 진입 스캐너
 # =====================================
 def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
     results = []
@@ -905,7 +908,7 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
 
 
 # =====================================
-# AI 자동분석: JSON 스키마 + 파싱
+# AI 자동분석: JSON 스키마 + 파싱 (✅ 강력 파서)
 # =====================================
 AI_JSON_SCHEMA = {
     "one_line": "한 줄 결론 (1문장, 명령형/행동형)",
@@ -924,30 +927,75 @@ AI_JSON_SCHEMA = {
     ]
 }
 
+
+def _json_loads_loose(s: str):
+    """
+    json.loads가 실패하는 흔한 케이스를 보정 후 재시도
+    """
+    if not s:
+        return None
+
+    s2 = (s.replace("“", '"').replace("”", '"')
+            .replace("‘", "'").replace("’", "'"))
+
+    # 트레일링 콤마 제거: ,} / ,]
+    s2 = re.sub(r",\s*}", "}", s2)
+    s2 = re.sub(r",\s*]", "]", s2)
+
+    try:
+        return json.loads(s2)
+    except Exception:
+        return None
+
+
 def _extract_json(text: str):
     """
-    모델이 앞뒤로 설명을 섞어도 JSON만 뽑아내기 위해:
-    1) ```json ... ``` 블록 우선
-    2) 없으면 첫 { ... } 덩어리 추출 시도
+    더 강력한 JSON 추출기:
+    - ```json 블록 우선
+    - 없으면 '중괄호 균형 스캔'으로 첫 번째 완전한 JSON 객체만 추출
+    - 스마트따옴표/트레일링 콤마 등 보정
     """
     if not text:
         return None
 
+    # 1) ```json ... ``` 우선
     m = re.search(r"```json\s*(\{.*?\})\s*```", text, re.S | re.I)
     if m:
-        try:
-            return json.loads(m.group(1))
-        except Exception:
-            pass
+        candidate = m.group(1).strip()
+        return _json_loads_loose(candidate)
 
+    # 2) 중괄호 균형 스캔으로 첫 JSON 객체 찾기
     start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        chunk = text[start:end+1]
-        try:
-            return json.loads(chunk)
-        except Exception:
-            return None
+    if start == -1:
+        return None
+
+    depth = 0
+    in_str = False
+    escape = False
+
+    for i in range(start, len(text)):
+        ch = text[i]
+
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        else:
+            if ch == '"':
+                in_str = True
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start:i + 1].strip()
+                    return _json_loads_loose(candidate)
+
     return None
 
 
@@ -966,6 +1014,7 @@ def call_ai_auto_analysis(
     """
     ✅ Responses API (response_format 사용 X)
     ✅ JSON은 프롬프트로 강제
+    ✅ 파싱은 강력 파서로 처리
     """
     api_key = st.secrets.get("OPENAI_API_KEY", None)
     if not api_key:
@@ -981,6 +1030,7 @@ def call_ai_auto_analysis(
 - 숫자는 필요하면 소수 2자리로
 - 과장 금지, 판단 근거는 짧고 명확하게
 - 투자 조언처럼 단정하지 말고 '조건부/확률/리스크'를 포함해라
+- JSON 문자열 값에 줄바꿈이 필요하면 \\n 으로만 표현해라 (실제 줄바꿈 금지)
 
 반드시 아래 스키마 형태로 출력:
 {json.dumps(AI_JSON_SCHEMA, ensure_ascii=False, indent=2)}
@@ -1026,6 +1076,7 @@ def call_ai_auto_analysis(
         text = resp.output_text
         data = _extract_json(text)
         if data is None:
+            # 디버그 필요할 때만 펼쳐서 보라고 원문 일부 표시
             return None, "AI 응답에서 JSON 파싱 실패 (모델이 형식을 어겼습니다)."
         return data, None
     except Exception as e:
@@ -1052,13 +1103,14 @@ if "scroll_to_result" not in st.session_state:
 if "scan_results" not in st.session_state:
     st.session_state["scan_results"] = None
 
-# ✅ AI 버튼 눌렀을 때 st.stop에 걸리지 않게 하는 트리거
+# ✅ AI 버튼 rerun 시 st.stop()에 걸리지 않게 하는 트리거
 if "trigger_ai" not in st.session_state:
     st.session_state["trigger_ai"] = False
 
-# ✅ AI 토글 상태도 유지(버튼 누를 때마다 꺼지는 느낌 방지)
+# ✅ AI 토글 상태 유지(버튼 누를 때마다 꺼지는 느낌 방지)
 if "use_ai_toggle" not in st.session_state:
     st.session_state["use_ai_toggle"] = False
+
 
 if st.session_state.get("pending_symbol"):
     ps = st.session_state["pending_symbol"]
@@ -1260,7 +1312,6 @@ with col_main:
 
     cfg = get_mode_config(mode_name)
 
-    # 보유정보
     col_mid1, col_mid2 = st.columns(2)
     avg_price = 0.0
     shares = 0
@@ -1308,8 +1359,7 @@ with col_main:
                     st.session_state["scroll_to_result"] = True
                     st.rerun()
 
-    # ✅ run=False로 st.stop 되면서 AI 버튼 클릭이 씹히던 문제 해결:
-    # - trigger_ai가 True이면 run을 강제로 True 취급
+    # ✅ AI 트리거가 켜져 있으면 run 없이도 아래 분석 파트 통과
     if not run and not st.session_state.get("trigger_ai", False):
         st.stop()
 
@@ -1396,15 +1446,20 @@ with col_main:
 
     col_a, col_b, col_c = st.columns(3)
     with col_a:
-        # ✅ 현재가 더 크고 굵게 (요청 반영)
+        # ✅ 현재가 크게/굵게 표시
+        if ext_price is not None:
+            diff_pct = (ext_price - price) / price * 100
+            sign = "+" if diff_pct >= 0 else ""
+            ext_text = f"시외 포함 최근가: {ext_price:.2f} ({sign}{diff_pct:.2f}%)"
+        else:
+            ext_text = "시외 포함 최근가: 조회 실패"
+
         st.markdown(
             f"""
             <div class="price-big-card">
               <div class="price-big-label">정규장 기준 현재가</div>
               <div class="price-big-value">{price:.2f} <span style="font-size:1.05rem;font-weight:800;color:#6b7280;">USD</span></div>
-              <div class="price-big-sub">
-                {"시외 포함 최근가: " + f"{ext_price:.2f}" + " (" + ("+" if ((ext_price - price)/price*100) >= 0 else "") + f"{(ext_price - price)/price*100:.2f}%" + ")" if ext_price is not None else "시외 포함 최근가: 조회 실패"}
-              </div>
+              <div class="price-big-sub">{ext_text}</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1488,14 +1543,14 @@ with col_main:
             st.caption(intraday_comment)
 
     # =====================================
-    # ✅ AI 자동분석 (버튼 눌러도 화면 안 사라지게 패치 완료)
+    # ✅ AI 자동분석 (트리거 방식)
     # =====================================
     st.markdown("---")
     st.subheader("🤖 AI 자동분석")
     st.caption("※ 버튼을 눌렀을 때만 AI를 호출합니다. (비용/속도 관리)")
 
     def _start_ai():
-        # ✅ AI 누른 순간 rerun되더라도 분석 영역을 통과시키기 위해 run_from_side를 강제 True
+        # 버튼 누른 순간 rerun되더라도 분석 파트 통과 보장
         st.session_state["run_from_side"] = True
         st.session_state["scroll_to_result"] = True
         st.session_state["trigger_ai"] = True
@@ -1506,7 +1561,7 @@ with col_main:
     ai_should_run = bool(use_ai and st.session_state.get("trigger_ai", False))
 
     if ai_should_run:
-        # ✅ 1회 실행 후 트리거 OFF
+        # 1회 실행 후 트리거 OFF
         st.session_state["trigger_ai"] = False
 
         levels = {
@@ -1545,6 +1600,11 @@ with col_main:
 
         if ai_err:
             st.error(ai_err)
+
+            # ✅ 파싱 실패 시 원문 일부를 확인할 수 있게(너 디버그용)
+            with st.expander("디버그(선택): 파싱 실패 원인 체크 팁", expanded=False):
+                st.caption("가끔 모델이 JSON 외 텍스트를 섞습니다. 이 경우에도 위 파서로 대부분 해결됩니다.")
+                st.caption("그래도 실패하면, 로그에 찍힌 'AI 호출 실패' 또는 응답 일부를 확인해야 합니다.")
         else:
             st.markdown("### 1️⃣ 한 줄 결론")
             st.success(ai_data.get("one_line", ""))
