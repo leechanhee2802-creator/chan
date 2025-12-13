@@ -1031,6 +1031,21 @@ if "scroll_to_result" not in st.session_state:
 if "scan_results" not in st.session_state:
     st.session_state["scan_results"] = None
 
+# =========================
+# AI 자동분석 세션 상태 (결과 유지용)
+# =========================
+if "ai_enabled" not in st.session_state:
+    st.session_state["ai_enabled"] = False
+if "ai_result" not in st.session_state:
+    st.session_state["ai_result"] = None
+if "ai_error" not in st.session_state:
+    st.session_state["ai_error"] = None
+if "ai_running" not in st.session_state:
+    st.session_state["ai_running"] = False
+if "ai_meta" not in st.session_state:
+    st.session_state["ai_meta"] = {}
+
+
 if st.session_state.get("pending_symbol"):
     ps = st.session_state["pending_symbol"]
     st.session_state["symbol_input"] = ps
@@ -1452,99 +1467,7 @@ with col_main:
     # ✅ AI 자동분석 (요청한 5가지 기능)
     # - 문구: "AI 자동분석" (gpt 단어 제거)
     # =====================================
-    st.markdown("---")
-    st.subheader("🤖 AI 자동분석")
-    st.caption("※ 버튼을 눌렀을 때만 AI를 호출합니다. (비용/속도 관리)")
-
-    use_ai = st.toggle("AI 자동분석 사용", value=False)
-    ai_run = st.button("🧠 AI 자동분석 실행", disabled=not use_ai)
-
-    if use_ai and ai_run:
-        levels = {
-            "buy_low": None if buy_low is None else float(buy_low),
-            "buy_high": None if buy_high is None else float(buy_high),
-            "tp0": None if tp0 is None else float(tp0),
-            "tp1": None if tp1 is None else float(tp1),
-            "tp2": None if tp2 is None else float(tp2),
-            "sl0": None if sl0 is None else float(sl0),
-            "sl1": None if sl1 is None else float(sl1),
-        }
-        indicators = {
-            "rsi": float(last["RSI14"]),
-            "macd": float(last["MACD"]),
-            "macds": float(last["MACD_SIGNAL"]),
-            "ma20": float(last["MA20"]),
-            "ma50": float(last["MA50"]),
-            "atr14": float(last["ATR14"]) if not np.isnan(last["ATR14"]) else None,
-            "k": float(last["STOCH_K"]),
-            "d": float(last["STOCH_D"]),
-        }
-
-        with st.spinner("AI 자동분석 생성 중..."):
-            ai_data, ai_err = call_ai_auto_analysis(
-                symbol=symbol,
-                holding_type=holding_type,
-                mode_name=cfg["name"],
-                market_score=score_mkt,
-                fgi=(None if fgi is None else float(fgi)),
-                price=price,
-                levels=levels,
-                indicators=indicators,
-                signal=signal,
-                bias_comment=bias_comment,
-            )
-
-        if ai_err:
-            st.error(ai_err)
-        else:
-            # 1) 한 줄 결론
-            st.markdown("### 1️⃣ 한 줄 결론")
-            st.success(ai_data.get("one_line", ""))
-
-            # 2) 헷갈리는 구간 설명
-            st.markdown("### 2️⃣ 헷갈리는 구간 설명")
-            st.write(ai_data.get("confusing_zone", ""))
-
-            # 3) IF-THEN 행동 카드
-            st.markdown("### 3️⃣ IF-THEN 행동 카드")
-            cards = ai_data.get("if_then_cards", [])
-            if not cards:
-                st.caption("카드가 비어있습니다.")
-            else:
-                for c in cards[:5]:
-                    st.markdown(
-                        f"""
-                        <div class="card-soft">
-                          <div class="small-muted">IF</div>
-                          <div style="font-size:1.05rem;font-weight:700;">{c.get('if','')}</div>
-                          <div class="small-muted" style="margin-top:8px;">THEN</div>
-                          <div style="font-size:1.0rem;font-weight:600;">{c.get('then','')}</div>
-                          <div class="small-muted" style="margin-top:8px;">NOTE</div>
-                          <div>{c.get('note','')}</div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-            # 4) 시장 톤 조절
-            st.markdown("### 4️⃣ 시장 톤 조절")
-            st.info(ai_data.get("market_tone", ""))
-
-            # 5) 질문형 판독
-            st.markdown("### 5️⃣ 질문형 판독")
-            qs = ai_data.get("questions", [])
-            if qs:
-                for q in qs[:3]:
-                    st.write("- " + str(q))
-
-            st.markdown("### ✅ 안전장치(Guardrails)")
-            gr = ai_data.get("guardrails", [])
-            if gr:
-                for g in gr[:4]:
-                    st.write("- " + str(g))
-
-            with st.expander("AI 원본 JSON 보기", expanded=False):
-                st.json(ai_data)
+    
 
     # =====================================
     # 차트 (간단 버전: 확대/드래그 거의 없음)
@@ -1552,3 +1475,4 @@ with col_main:
     st.subheader("📈 가격 / 볼린저밴드 차트 (최근)")
     chart_df = df[["Close", "MA20", "BBL", "BBU"]].tail(120)
     st.line_chart(chart_df)
+
