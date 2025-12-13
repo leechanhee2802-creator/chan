@@ -146,6 +146,33 @@ p, label, span, div { font-size: 0.94rem; color: #111827 !important; }
     font-size:0.78rem; font-weight:600;
 }
 
+/* ✅ 현재가 큰 표시(요청 반영) */
+.price-big-card{
+    background: rgba(255,255,255,0.96);
+    border-radius: 22px;
+    padding: 14px 16px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 10px 25px rgba(15,23,42,0.08);
+}
+.price-big-label{
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #6b7280 !important;
+    letter-spacing: 0.02em;
+}
+.price-big-value{
+    font-size: 2.2rem;
+    font-weight: 900;
+    margin-top: 4px;
+    color: #111827 !important;
+    line-height: 1.05;
+}
+.price-big-sub{
+    font-size: 0.86rem;
+    color: #6b7280 !important;
+    margin-top: 6px;
+}
+
 /* 입력 */
 [data-baseweb="input"] > div, [data-baseweb="select"] > div {
     background-color:#ffffff !important;
@@ -178,6 +205,7 @@ input::placeholder, textarea::placeholder { color:#9ca3af !important; }
 @media (max-width: 768px) {
     .metric-value { font-size: 1.4rem; }
     .layer-symbol, .layer-chg-pos, .layer-chg-neg, .layer-chg-flat { font-size: 1.0rem; }
+    .price-big-value{ font-size: 2.0rem; }
 }
 </style>
 """,
@@ -201,14 +229,11 @@ KOREAN_TICKER_MAP = {
     "브로드컴": "AVGO",
     "에이엠디": "AMD", "AMD": "AMD",
     "TSMC": "TSM", "티에스엠씨": "TSM",
-
     "오라클": "ORCL",
     "페이팔": "PYPL",
-
     "QQQ": "QQQ", "나스닥ETF": "QQQ", "나스닥100": "QQQ",
     "SPY": "SPY", "S&P500": "SPY", "SP500": "SPY",
     "VOO": "VOO",
-
     "SOXL": "SOXL", "반도체3배": "SOXL",
     "SOXS": "SOXS", "반도체인버스3배": "SOXS",
     "TQQQ": "TQQQ", "나스닥3배": "TQQQ",
@@ -218,7 +243,6 @@ KOREAN_TICKER_MAP = {
     "SPXS": "SPXS", "S&P인버스3배": "SPXS",
     "LABU": "LABU", "바이오3배": "LABU",
     "LABD": "LABD", "바이오인버스3배": "LABD",
-
     "비트코인ETF": "IBIT",
     "아이쉐어즈비트코인": "IBIT",
 }
@@ -228,7 +252,6 @@ POPULAR_SYMBOLS = [
     "QQQ", "TQQQ", "SOXL", "SPY", "VOO",
     "ORCL", "PYPL", "NFLX", "PLTR", "AVGO",
 ]
-
 SCAN_CANDIDATES = sorted(set(POPULAR_SYMBOLS + ["GOOGL"]))
 
 
@@ -882,7 +905,7 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
 
 
 # =====================================
-# GPT(=AI) 자동분석: JSON 스키마 + 파싱
+# AI 자동분석: JSON 스키마 + 파싱
 # =====================================
 AI_JSON_SCHEMA = {
     "one_line": "한 줄 결론 (1문장, 명령형/행동형)",
@@ -917,7 +940,6 @@ def _extract_json(text: str):
         except Exception:
             pass
 
-    # 가장 바깥 { } 덩어리 찾기 (단순)
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
@@ -951,7 +973,6 @@ def call_ai_auto_analysis(
 
     client = OpenAI(api_key=api_key)
 
-    # 프롬프트: JSON만 출력 강제
     prompt = f"""
 너는 한국어로 답하는 '주식 자동판독기'의 AI 분석 엔진이다.
 아래 입력을 바탕으로 반드시 **JSON만** 출력해라.
@@ -1031,20 +1052,13 @@ if "scroll_to_result" not in st.session_state:
 if "scan_results" not in st.session_state:
     st.session_state["scan_results"] = None
 
-# =========================
-# AI 자동분석 세션 상태 (결과 유지용)
-# =========================
-if "ai_enabled" not in st.session_state:
-    st.session_state["ai_enabled"] = False
-if "ai_result" not in st.session_state:
-    st.session_state["ai_result"] = None
-if "ai_error" not in st.session_state:
-    st.session_state["ai_error"] = None
-if "ai_running" not in st.session_state:
-    st.session_state["ai_running"] = False
-if "ai_meta" not in st.session_state:
-    st.session_state["ai_meta"] = {}
+# ✅ AI 버튼 눌렀을 때 st.stop에 걸리지 않게 하는 트리거
+if "trigger_ai" not in st.session_state:
+    st.session_state["trigger_ai"] = False
 
+# ✅ AI 토글 상태도 유지(버튼 누를 때마다 꺼지는 느낌 방지)
+if "use_ai_toggle" not in st.session_state:
+    st.session_state["use_ai_toggle"] = False
 
 if st.session_state.get("pending_symbol"):
     ps = st.session_state["pending_symbol"]
@@ -1262,7 +1276,7 @@ with col_main:
     run = run_click or run_from_side
     st.session_state["run_from_side"] = False
 
-    # 신규 진입 스캐너 (번잡함 해결: expander + 결과 저장)
+    # 신규 진입 스캐너
     with st.expander("📊 신규 진입 스캐너 (A안, 간단)", expanded=False):
         scan_click = st.button("🛰 스캐너 실행", key="run_scan")
         if scan_click:
@@ -1294,7 +1308,9 @@ with col_main:
                     st.session_state["scroll_to_result"] = True
                     st.rerun()
 
-    if not run:
+    # ✅ run=False로 st.stop 되면서 AI 버튼 클릭이 씹히던 문제 해결:
+    # - trigger_ai가 True이면 run을 강제로 True 취급
+    if not run and not st.session_state.get("trigger_ai", False):
         st.stop()
 
     # ====== 분석 시작 ======
@@ -1333,7 +1349,7 @@ with col_main:
 
     buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, cfg)
 
-    # ✅ 신규 진입 손절은 "매수 가설 실패" 관점으로 별도 조정
+    # 신규 진입 손절은 "매수 가설 실패" 관점으로 별도 조정
     if holding_type == "신규 진입 검토" and buy_low is not None:
         sl0 = buy_low * 0.97
         sl1 = buy_low * 0.94
@@ -1354,7 +1370,7 @@ with col_main:
     elif (not fav_new) and is_fav:
         st.session_state["favorite_symbols"].remove(symbol)
 
-    # ✅ 분석 결과로 자동 스크롤 (확실히 동작)
+    # ✅ 분석 결과로 자동 스크롤
     st.markdown('<div id="analysis_result_anchor"></div>', unsafe_allow_html=True)
     if st.session_state.get("scroll_to_result", True):
         st.markdown(
@@ -1371,7 +1387,7 @@ with col_main:
     st.session_state["scroll_to_result"] = False
 
     # ==========================
-    # UI 출력 (보유/신규 공통으로 항상 뜸)
+    # UI 출력
     # ==========================
     st.subheader("🧾 요약")
     st.write(f"- 입력 종목: **{user_symbol}** → 실제 티커: **{symbol}**")
@@ -1380,11 +1396,19 @@ with col_main:
 
     col_a, col_b, col_c = st.columns(3)
     with col_a:
-        st.metric("정규장 기준 현재가", f"{price:.2f} USD")
-        if ext_price is not None:
-            diff_pct = (ext_price - price) / price * 100
-            sign = "+" if diff_pct >= 0 else ""
-            st.caption(f"시외 포함 최근가: {ext_price:.2f} ({sign}{diff_pct:.2f}%)")
+        # ✅ 현재가 더 크고 굵게 (요청 반영)
+        st.markdown(
+            f"""
+            <div class="price-big-card">
+              <div class="price-big-label">정규장 기준 현재가</div>
+              <div class="price-big-value">{price:.2f} <span style="font-size:1.05rem;font-weight:800;color:#6b7280;">USD</span></div>
+              <div class="price-big-sub">
+                {"시외 포함 최근가: " + f"{ext_price:.2f}" + " (" + ("+" if ((ext_price - price)/price*100) >= 0 else "") + f"{(ext_price - price)/price*100:.2f}%" + ")" if ext_price is not None else "시외 포함 최근가: 조회 실패"}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     with col_b:
         st.markdown(
@@ -1464,15 +1488,111 @@ with col_main:
             st.caption(intraday_comment)
 
     # =====================================
-    # ✅ AI 자동분석 (요청한 5가지 기능)
-    # - 문구: "AI 자동분석" (gpt 단어 제거)
+    # ✅ AI 자동분석 (버튼 눌러도 화면 안 사라지게 패치 완료)
     # =====================================
-    
+    st.markdown("---")
+    st.subheader("🤖 AI 자동분석")
+    st.caption("※ 버튼을 눌렀을 때만 AI를 호출합니다. (비용/속도 관리)")
+
+    def _start_ai():
+        # ✅ AI 누른 순간 rerun되더라도 분석 영역을 통과시키기 위해 run_from_side를 강제 True
+        st.session_state["run_from_side"] = True
+        st.session_state["scroll_to_result"] = True
+        st.session_state["trigger_ai"] = True
+
+    use_ai = st.toggle("AI 자동분석 사용", value=st.session_state.get("use_ai_toggle", False), key="use_ai_toggle")
+    st.button("🧠 AI 자동분석 실행", disabled=not use_ai, on_click=_start_ai, key="ai_run_btn")
+
+    ai_should_run = bool(use_ai and st.session_state.get("trigger_ai", False))
+
+    if ai_should_run:
+        # ✅ 1회 실행 후 트리거 OFF
+        st.session_state["trigger_ai"] = False
+
+        levels = {
+            "buy_low": None if buy_low is None else float(buy_low),
+            "buy_high": None if buy_high is None else float(buy_high),
+            "tp0": None if tp0 is None else float(tp0),
+            "tp1": None if tp1 is None else float(tp1),
+            "tp2": None if tp2 is None else float(tp2),
+            "sl0": None if sl0 is None else float(sl0),
+            "sl1": None if sl1 is None else float(sl1),
+        }
+        indicators = {
+            "rsi": float(last["RSI14"]),
+            "macd": float(last["MACD"]),
+            "macds": float(last["MACD_SIGNAL"]),
+            "ma20": float(last["MA20"]),
+            "ma50": float(last["MA50"]),
+            "atr14": float(last["ATR14"]) if not np.isnan(last["ATR14"]) else None,
+            "k": float(last["STOCH_K"]),
+            "d": float(last["STOCH_D"]),
+        }
+
+        with st.spinner("AI 자동분석 생성 중..."):
+            ai_data, ai_err = call_ai_auto_analysis(
+                symbol=symbol,
+                holding_type=holding_type,
+                mode_name=cfg["name"],
+                market_score=score_mkt,
+                fgi=(None if fgi is None else float(fgi)),
+                price=price,
+                levels=levels,
+                indicators=indicators,
+                signal=signal,
+                bias_comment=bias_comment,
+            )
+
+        if ai_err:
+            st.error(ai_err)
+        else:
+            st.markdown("### 1️⃣ 한 줄 결론")
+            st.success(ai_data.get("one_line", ""))
+
+            st.markdown("### 2️⃣ 헷갈리는 구간 설명")
+            st.write(ai_data.get("confusing_zone", ""))
+
+            st.markdown("### 3️⃣ IF-THEN 행동 카드")
+            cards = ai_data.get("if_then_cards", [])
+            if not cards:
+                st.caption("카드가 비어있습니다.")
+            else:
+                for c in cards[:5]:
+                    st.markdown(
+                        f"""
+                        <div class="card-soft">
+                          <div class="small-muted">IF</div>
+                          <div style="font-size:1.05rem;font-weight:700;">{c.get('if','')}</div>
+                          <div class="small-muted" style="margin-top:8px;">THEN</div>
+                          <div style="font-size:1.0rem;font-weight:600;">{c.get('then','')}</div>
+                          <div class="small-muted" style="margin-top:8px;">NOTE</div>
+                          <div>{c.get('note','')}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+            st.markdown("### 4️⃣ 시장 톤 조절")
+            st.info(ai_data.get("market_tone", ""))
+
+            st.markdown("### 5️⃣ 질문형 판독")
+            qs = ai_data.get("questions", [])
+            if qs:
+                for q in qs[:3]:
+                    st.write("- " + str(q))
+
+            st.markdown("### ✅ 안전장치(Guardrails)")
+            gr = ai_data.get("guardrails", [])
+            if gr:
+                for g in gr[:4]:
+                    st.write("- " + str(g))
+
+            with st.expander("AI 원본 JSON 보기", expanded=False):
+                st.json(ai_data)
 
     # =====================================
-    # 차트 (간단 버전: 확대/드래그 거의 없음)
+    # 차트
     # =====================================
     st.subheader("📈 가격 / 볼린저밴드 차트 (최근)")
     chart_df = df[["Close", "MA20", "BBL", "BBU"]].tail(120)
     st.line_chart(chart_df)
-
