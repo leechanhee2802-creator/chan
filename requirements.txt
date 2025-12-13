@@ -3,4 +3,4 @@ yfinance
 pandas
 numpy
 requests
-matplotlib
+plotly
