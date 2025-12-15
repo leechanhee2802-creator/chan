@@ -1760,6 +1760,7 @@ with col_main:
                 extra_notes.append(f"ATR14: {atr14:.2f}")
 
             with st.spinner("AI 해석 생성 중..."):
+                ai_model_name = st.session_state.get("ai_model_name", "gpt-4o-mini")
                 parsed, err = ai_summarize_and_explain(
                     symbol=symbol,
                     holding_type=holding_type,
