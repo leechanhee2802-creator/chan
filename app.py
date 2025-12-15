@@ -1785,39 +1785,43 @@ with col_main:
                 st.error(err or "AI 생성 실패")
 
 if cache_key and cache_key in st.session_state.get("ai_cache", {}):
-            ai_out = st.session_state["ai_cache"][cache_key]
-            one = ai_out.get("summary_one_line", "").strip()
-            blocks = ai_out.get("confusion_explain", [])
+    ai_out = st.session_state["ai_cache"][cache_key]
+    one = ai_out.get("summary_one_line", "").strip()
+    blocks = ai_out.get("confusion_explain", [])
 
-            st.markdown(
-                f"""
-                <div class="card-soft">
-                  <div class="layer-title-en">AI SUMMARY</div>
-                  <div style="font-size:1.05rem;font-weight:700;line-height:1.35;">{one}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+    st.markdown(
+        f"""
+        <div class="card-soft">
+          <div class="layer-title-en">AI SUMMARY</div>
+          <div style="font-size:1.05rem;font-weight:700;line-height:1.35;">{one}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-            if isinstance(blocks, list) and blocks:
-                # 최대 2개만 노출 (번잡 방지)
-                blocks = blocks[:2]
-                cols = st.columns(len(blocks))
-                for i, b in enumerate(blocks):
-                    title = str(b.get("title", "")).strip()
-                    desc = str(b.get("desc", "")).strip()
-                    with cols[i]:
-                        st.markdown(
-                            f"""
-                            <div class="card-soft-sm">
-                              <div style="font-weight:700;margin-bottom:6px;">{title}</div>
-                              <div class="small-muted" style="line-height:1.45;">{desc}</div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-        else:
-            st.info("AI 해석은 버튼을 누를 때만 생성됩니다. (Streamlit Secrets에 OPENAI_API_KEY가 있어야 합니다.)")
+    if isinstance(blocks, list) and blocks:
+        blocks = blocks[:2]
+        cols = st.columns(len(blocks))
+        for i, b in enumerate(blocks):
+            title = str(b.get("title", "")).strip()
+            desc = str(b.get("desc", "")).strip()
+            with cols[i]:
+                st.markdown(
+                    f"""
+                    <div class="card-soft-sm">
+                      <div style="font-weight:700;margin-bottom:6px;">{title}</div>
+                      <div class="small-muted" style="line-height:1.45;">{desc}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+else:  # ✅ 이 else는 위 if(cache_key...)의 else
+    st.info(
+        "AI 해석은 버튼을 누를 때만 생성됩니다. "
+        "(Streamlit Secrets에 OPENAI_API_KEY가 있어야 합니다.)"
+    )
+
 
         st.subheader("📈 가격/볼린저밴드 차트 (단순 표시)")
         chart_df = df[["Close", "MA20", "BBL", "BBU"]].tail(120)
