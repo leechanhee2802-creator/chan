@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import requests
 
-# 선택 기능: AI 해석(요약/헷갈림 설명)
+# 선택 기능: AI 해석(요약/행동플랜)
 try:
     from openai import OpenAI
 except Exception:
@@ -102,7 +102,6 @@ p, label, span, div { font-size: 0.94rem; color: #111827 !important; }
 .chip-green { background: #bbf7d0; color: #166534 !important; }
 .chip-blue  { background: #dbeafe; color: #1d4ed8 !important; }
 .chip-red   { background: #fee2e2; color: #b91c1c !important; }
-.chip-gray  { background: #e5e7eb; color: #374151 !important; }
 
 /* 레이어 */
 .layer-title-en {
@@ -518,118 +517,6 @@ def compute_market_score(overview: dict):
     return score, label, " · ".join(details)
 
 # =====================================
-# ✅ MARKET VERDICT (요구 형식 고정)
-# =====================================
-def _market_badge_from_state(state: str):
-    s = (state or "").upper().strip()
-    # yahoo marketState 값이 환경마다 다를 수 있어서 넉넉하게 처리
-    if s in ("PRE", "PREPRE", "PRE_MARKET", "PREMARKET"):
-        return "🟡 프리장"
-    if s in ("REGULAR", "REG", "OPEN"):
-        return "🟢 정규장"
-    if s in ("POST", "POSTPOST", "POST_MARKET", "AFTER_HOURS", "AFTERHOURS", "CLOSED"):
-        return "🟣 애프터장"
-    return "⚪ 장 상태 불명"
-
-def build_market_verdict_lines(ov: dict, score_mkt: int, bt_score: int):
-    fut = ov.get("futures", {})
-    rf = ov.get("rates_fx", {})
-    etfs = ov.get("etfs", [])
-    fgi = ov.get("fgi")
-
-    # 1) 세계지표 (금리+달러+FGI 기반 요약)
-    us10y = rf.get("us10y")
-    dxy = rf.get("dxy")
-
-    risk_bias = "중립"
-    if score_mkt >= 2:
-        risk_bias = "Risk-on 우세"
-    elif score_mkt <= -2:
-        risk_bias = "Risk-off 우세"
-
-    world_parts = []
-    if us10y is not None:
-        if us10y >= 4.4:
-            world_parts.append("금리 부담")
-        elif us10y <= 4.1:
-            world_parts.append("금리 우호")
-        else:
-            world_parts.append("금리 중립")
-    if dxy is not None:
-        if dxy >= 106:
-            world_parts.append("달러 강세")
-        elif dxy <= 104:
-            world_parts.append("달러 약세")
-        else:
-            world_parts.append("달러 중립")
-    if fgi is not None:
-        if fgi <= 25:
-            world_parts.append("심리 공포")
-        elif fgi >= 75:
-            world_parts.append("심리 탐욕")
-        else:
-            world_parts.append("심리 중립")
-
-    world_line = f"세계지표: {risk_bias}" + (f" ({', '.join(world_parts)})" if world_parts else "")
-
-    # 2) ETF 선행 (QQQ/VOO/SOXX 평균 변화율)
-    etf_chgs = [e.get("chg_pct") for e in etfs if e.get("chg_pct") is not None]
-    if etf_chgs:
-        avg_etf = float(np.mean(etf_chgs))
-        if avg_etf >= 0.5:
-            etf_tone = f"강세 ({avg_etf:+.2f}%)"
-        elif avg_etf <= -0.5:
-            etf_tone = f"약세 ({avg_etf:+.2f}%)"
-        else:
-            etf_tone = f"혼조 ({avg_etf:+.2f}%)"
-    else:
-        etf_tone = "데이터 부족"
-    etf_line = f"ETF선행: {etf_tone}"
-
-    # 3) 지수 (선물 기반)
-    nas_chg = fut.get("nasdaq", {}).get("chg_pct")
-    sp_chg = fut.get("sp500", {}).get("chg_pct")
-    idx_parts = []
-    if nas_chg is not None:
-        idx_parts.append(f"나스닥 선물 {nas_chg:+.2f}%")
-    if sp_chg is not None:
-        idx_parts.append(f"S&P 선물 {sp_chg:+.2f}%")
-    idx_line = "지수: " + (" / ".join(idx_parts) if idx_parts else "데이터 부족")
-
-    # 4) 빅테크
-    if bt_score >= 2:
-        bt_tone = f"상단 탄력 우세 (점수 {bt_score})"
-    elif bt_score <= -2:
-        bt_tone = f"상단 부담/약세 (점수 {bt_score})"
-    else:
-        bt_tone = f"혼조 (점수 {bt_score})"
-    bt_line = f"빅테크: {bt_tone}"
-
-    # 결론 2줄 (규칙 기반, 과도하게 매매 지시 X)
-    if score_mkt <= -3 or bt_score <= -2:
-        c1 = "📌 결론: 신규진입 불리 (변동성/조정 구간 가능성)"
-        c2 = "→ 보유자는 단기 반등까지만 대응 + 방어라인 엄수"
-        badge_cls = "chip chip-red"
-    elif score_mkt >= 3 and bt_score >= 1:
-        c1 = "📌 결론: 신규진입 가능 (우상향/상승 탄력 구간)"
-        c2 = "→ 보유자는 추세 유지, 무리한 추격매수는 금지"
-        badge_cls = "chip chip-green"
-    else:
-        c1 = "📌 결론: 중립/혼조 (확인 필요)"
-        c2 = "→ 신규진입은 소량/분할만, 보유자는 줄/늘 기준을 가격으로 고정"
-        badge_cls = "chip chip-gray"
-
-    return {
-        "world_line": world_line,
-        "etf_line": etf_line,
-        "idx_line": idx_line,
-        "bt_line": bt_line,
-        "c1": c1,
-        "c2": c2,
-        "badge_cls": badge_cls,
-    }
-
-# =====================================
 # 가격 데이터 + 지표
 # =====================================
 def get_price_data(symbol, period="6mo"):
@@ -697,7 +584,7 @@ def get_intraday_5m(symbol: str):
 
 
 # =====================================
-# AI 해석(가격 행동 플랜) 유틸
+# AI 행동플랜 유틸
 # =====================================
 def _ai_make_cache_key(symbol: str, holding_type: str, mode_name: str, avg_price: float, df_last: pd.Series, market_label: str):
     payload = {
@@ -706,6 +593,12 @@ def _ai_make_cache_key(symbol: str, holding_type: str, mode_name: str, avg_price
         "mode": mode_name,
         "avg_price": round(float(avg_price or 0.0), 4),
         "close": round(float(df_last.get("Close", 0.0)), 4),
+        "ma20": round(float(df_last.get("MA20", 0.0)), 4),
+        "bbl": round(float(df_last.get("BBL", 0.0)), 4),
+        "bbu": round(float(df_last.get("BBU", 0.0)), 4),
+        "rsi": round(float(df_last.get("RSI14", 0.0)), 4),
+        "macd": round(float(df_last.get("MACD", 0.0)), 4),
+        "macds": round(float(df_last.get("MACD_SIGNAL", 0.0)), 4),
         "market": market_label,
     }
     s = json.dumps(payload, ensure_ascii=False, sort_keys=True)
@@ -722,7 +615,7 @@ def _ai_extract_json(text: str):
     except Exception:
         return None
 
-def ai_action_plan_price_only(
+def ai_make_action_plan(
     symbol: str,
     holding_type: str,
     mode_name: str,
@@ -731,8 +624,11 @@ def ai_action_plan_price_only(
     price: float,
     avg_price: float,
     signal: str,
+    bias_comment: str,
+    gap_comment: str,
     rr: float,
     levels: dict,
+    last_row: pd.Series,
     extra_notes: list,
     model_name: str = "gpt-4o-mini",
 ):
@@ -749,51 +645,84 @@ def ai_action_plan_price_only(
         "holding_type": holding_type,
         "mode": mode_name,
         "market": {"label": market_label, "detail": market_detail},
-        "price": float(price),
-        "avg_price": float(avg_price or 0.0),
+        "price": price,
+        "avg_price": avg_price,
         "signal": signal,
-        "rr_ratio": float(rr) if rr is not None else None,
+        "bias": bias_comment,
+        "gap": gap_comment,
+        "rr_ratio": rr,
         "levels": levels,
+        "indicators": {
+            "MA20": float(last_row["MA20"]),
+            "BBL": float(last_row["BBL"]),
+            "BBU": float(last_row["BBU"]),
+            "RSI14": float(last_row["RSI14"]),
+            "MACD": float(last_row["MACD"]),
+            "MACD_SIGNAL": float(last_row["MACD_SIGNAL"]),
+            "STOCH_K": float(last_row["STOCH_K"]),
+            "STOCH_D": float(last_row["STOCH_D"]),
+            "ATR14": float(last_row["ATR14"]),
+        },
         "notes": extra_notes[:8],
     }
 
     system = (
-        "너는 '주식 자동판독기'의 행동 플랜 생성기다. "
-        "확정 매수/매도 지시(지금 당장 사라/팔아라)는 금지. "
-        "대신 '가격 기준'으로 조건과 행동을 제시한다. "
-        "출력은 반드시 JSON만."
+        "너는 '주식 자동판독기'의 해석 도우미다. "
+        "확정 매수/매도 지시는 금지하고, "
+        "조건부(If-Then) 행동 플랜을 제시한다. "
+        "추상적으로 말하지 말고, 반드시 가격 레벨(buy_low/buy_high/tp/sl/ma20/bbl/bbu 중 최소 2개)을 포함해 구체적으로 쓴다. "
+        "반드시 JSON만 출력한다."
     )
 
-    # 금지 단어(지표 언급 제거)
-    banned = ["MA20", "RSI", "MACD", "볼린저", "BBL", "BBU", "스토캐스틱", "ATR", "이평", "모멘텀", "과매도", "과매수"]
+    # 보유/신규에 따른 문장 톤 가이드
+    if holding_type == "보유 중":
+        stance_guide = "보유자 기준. '유지/축소/추가매수'를 조건부로 제시하고, 무효화(sl0/sl1)를 명확히."
+    else:
+        stance_guide = "신규진입 기준. '대기/확인 후 진입/눌림 분할'을 조건부로 제시하고, 무효화(sl0)를 명확히."
 
     user = (
-        "아래 데이터를 바탕으로, 오직 '가격 레벨'만 이용해 행동 플랜을 만들어라.\n"
-        "절대 지표 용어(예: MA20/RSI/MACD/볼린저/ATR 등)를 언급하지 마라.\n"
-        f"금지어: {', '.join(banned)}\n\n"
-        "반드시 아래 JSON 형태로만 출력(키/타입 고정):\n"
+        "아래 데이터는 기술적 지표 기반 요약이다.\n"
+        "반드시 아래 JSON 형태로만 출력해라(키/구조/타입 고정).\n\n"
         "{\n"
-        "  \"ai_stance\": \"짧은 한 줄(예: 대기/관망/보유/부분익절/방어 등). 반드시 '가격 기준' 포함\",\n"
-        "  \"price_focus\": {\n"
-        "    \"watch\": \"지금부터 볼 핵심 가격 1개(예: buy_low, tp1 등) + 이유\",\n"
-        "    \"confirm\": \"확인(돌파/회복) 가격 1개 + 의미\",\n"
-        "    \"invalidate\": \"무효화/방어 가격 1개 + 의미\"\n"
-        "  },\n"
-        "  \"plans\": [\n"
-        "    {\"name\": \"PLAN A\", \"when\": \"가격 조건(숫자 포함)\", \"action\": \"행동(짧게)\", \"invalid\": \"무효화 조건(숫자 포함)\"},\n"
-        "    {\"name\": \"PLAN B\", \"when\": \"가격 조건(숫자 포함)\", \"action\": \"행동(짧게)\", \"invalid\": \"무효화 조건(숫자 포함)\"}\n"
+        "  \"stance_one_line\": \"현재 스탠스(대기/유지/축소/눌림분할 등) + 근거 1개(MA20/BB/RSI/MACD 중) + 핵심 레벨 1개 포함\",\n"
+        "  \"action_plans\": [\n"
+        "    {\n"
+        "      \"plan\": \"PLAN A\",\n"
+        "      \"when\": \"어떤 조건이 충족되면(가격/지표/레벨)\",\n"
+        "      \"action\": \"그때 할 행동(분할진입/유지/부분익절/비중축소 등, 확정지시 금지)\",\n"
+        "      \"invalid\": \"무효화 조건(예: sl0 이탈/MA20 재이탈 등)\"\n"
+        "    },\n"
+        "    {\n"
+        "      \"plan\": \"PLAN B\",\n"
+        "      \"when\": \"눌림/반등 시나리오 조건\",\n"
+        "      \"action\": \"대응(1차/2차 분할 등 구체)\",\n"
+        "      \"invalid\": \"무효화 조건\"\n"
+        "    },\n"
+        "    {\n"
+        "      \"plan\": \"PLAN C\",\n"
+        "      \"when\": \"리스크 확대/추세 붕괴 조건\",\n"
+        "      \"action\": \"방어 행동(손절/축소/관망 등)\",\n"
+        "      \"invalid\": \"추가 경고(예: sl1 이탈, 급락 변동성)\"\n"
+        "    }\n"
         "  ],\n"
-        "  \"key_triggers\": [\"트리거1(숫자 포함)\", \"트리거2(숫자 포함)\", \"트리거3(숫자 포함)\"],\n"
-        "  \"level_guide\": {\n"
-        "    \"buy_band\": \"buy_low~buy_high 의미를 짧게\",\n"
-        "    \"tp\": \"tp0/tp1/tp2 의미를 짧게\",\n"
-        "    \"sl\": \"sl0/sl1 의미를 짧게\"\n"
+        "  \"top_triggers\": [\n"
+        "    \"트리거1(회복/확인): 예: MA20 재돌파 or MACD 골든\",\n"
+        "    \"트리거2(눌림): 예: buy_low/BBL 근처 반등\",\n"
+        "    \"트리거3(무효화): 예: sl0 하향 이탈\"\n"
+        "  ],\n"
+        "  \"level_translation\": {\n"
+        "    \"buy_band\": \"buy_low~buy_high의 의미\",\n"
+        "    \"tp\": \"tp0/tp1/tp2의 의미\",\n"
+        "    \"sl\": \"sl0/sl1의 의미\",\n"
+        "    \"ma_bb\": \"MA20/BBL/BBU가 지금 상태에서 의미하는 것\"\n"
         "  }\n"
         "}\n\n"
-        "추가 제약:\n"
-        "- 반드시 levels 안의 숫자(또는 price/avg_price)를 직접 써서 문장을 구성해라.\n"
-        "- plans는 2개로 제한(복잡도 방지).\n"
-        "- '매수/매도 확정 지시' 금지. 대신 '분할/대기/방어/부분' 같은 표현 사용.\n\n"
+        "제약:\n"
+        "- 확정 매수/매도 지시는 금지(\"지금 사라/팔아라\" 금지).\n"
+        "- 가격/레벨/지표를 낭독하지 말고 '행동' 중심으로 번역해라.\n"
+        "- 반드시 레벨/지표를 최소 2개 이상 언급해라.\n"
+        f"- 가이드: {stance_guide}\n"
+        "- JSON 외 텍스트 출력 금지.\n\n"
         f"DATA:\n{json.dumps(compact, ensure_ascii=False)}"
     )
 
@@ -806,24 +735,19 @@ def ai_action_plan_price_only(
         text = (resp.choices[0].message.content or "").strip()
         parsed = _ai_extract_json(text)
 
-        # 간단 검증
-        if (
-            isinstance(parsed, dict)
-            and isinstance(parsed.get("ai_stance"), str)
-            and isinstance(parsed.get("price_focus"), dict)
-            and isinstance(parsed.get("plans"), list)
-            and len(parsed.get("plans")) >= 2
-        ):
-            return parsed, None
+        if parsed and isinstance(parsed.get("stance_one_line"), str) and isinstance(parsed.get("action_plans"), list):
+            if len(parsed["action_plans"]) >= 3 and isinstance(parsed.get("top_triggers"), list) and isinstance(parsed.get("level_translation"), dict):
+                return parsed, None
+            return None, "AI 응답이 형식은 맞지만 내용 블록이 부족합니다(PLAN/트리거/번역 확인)."
 
         return None, "AI 응답에서 JSON 파싱 실패 (모델이 형식을 어겼습니다)."
     except Exception as e:
         return None, f"AI 호출 실패: {e}"
 
 def request_ai_generation():
-    """AI 버튼 클릭 시: 결과가 사라지지 않도록 상태를 저장하고, 결과 영역으로 자동 스크롤."""
+    """AI 버튼 클릭 시: 결과가 사라지지 않도록 상태를 저장하고, AI 영역으로 자동 스크롤."""
     st.session_state["ai_request"] = True
-    st.session_state["scroll_to_result"] = True
+    st.session_state["scroll_to"] = "ai_result_anchor"
 
 
 # =====================================
@@ -882,19 +806,15 @@ def calc_trend_stops(df: pd.DataFrame, cfg: dict):
 
     candidates = []
 
-    # 1) 스윙 저점
     if swing_low < price:
         candidates.append(swing_low * 0.995)
 
-    # 2) MA20
     if ma20 < price:
         candidates.append(ma20 * 0.99)
 
-    # 5) 박스 하단
     if box_low < price:
         candidates.append(box_low * 0.995)
 
-    # 6) ATR
     if atr is not None and atr > 0:
         atr_stop = price - cfg["atr_mult"] * atr
         if atr_stop < price:
@@ -955,7 +875,6 @@ def make_signal(row, avg_price, cfg, fgi=None, main_tp=None, main_sl=None):
     mild_overbought = (price > ma20 and (k > 70 or rsi > 60))
     strong_oversold = (price < bbl and k < 20 and d < 20 and rsi < 35)
 
-    # 신규 진입
     if avg_price <= 0:
         if fear and price < bbl * 1.02 and k < 30 and rsi < 45:
             return "초기 매수 관심 (공포 국면)"
@@ -966,7 +885,6 @@ def make_signal(row, avg_price, cfg, fgi=None, main_tp=None, main_sl=None):
         else:
             return "관망 (신규 진입 관점)"
 
-    # 보유 관점
     trend_up = (price > ma20 and macd > macds and rsi >= 45)
     broken_trend = (main_sl is not None and price < main_sl * 0.995)
     near_tp_zone = (main_tp is not None and price >= main_tp * 0.95)
@@ -1219,8 +1137,8 @@ if "symbol_input" not in st.session_state:
     st.session_state["symbol_input"] = st.session_state["selected_symbol"]
 if "pending_symbol" not in st.session_state:
     st.session_state["pending_symbol"] = ""
-if "scroll_to_result" not in st.session_state:
-    st.session_state["scroll_to_result"] = False
+if "scroll_to" not in st.session_state:
+    st.session_state["scroll_to"] = None
 if "scan_results" not in st.session_state:
     st.session_state["scan_results"] = None
 
@@ -1299,44 +1217,6 @@ with col_main:
         etfs = ov.get("etfs", [])
         bigtech_layer = ov.get("bigtech", {})
         sector_layer = ov.get("sector", {})
-
-        bt_score = bigtech_layer.get("score", 0)
-
-        # ✅ 장 상태 배지 (ETF market_state 기반: QQQ 우선)
-        rep_state = ""
-        if etfs and isinstance(etfs, list):
-            # QQQ가 있으면 QQQ 기준, 없으면 첫 번째 ETF 기준
-            qqq_state = None
-            for e in etfs:
-                if e.get("symbol") == "QQQ":
-                    qqq_state = e.get("market_state", "")
-                    break
-            rep_state = qqq_state if qqq_state is not None else (etfs[0].get("market_state", "") if etfs else "")
-        badge_text = _market_badge_from_state(rep_state)
-
-        # ✅ MARKET VERDICT 카드 (형식 고정)
-        verdict = build_market_verdict_lines(ov, score_mkt, bt_score)
-        st.markdown(
-            f"""
-            <div class="card-soft">
-              <div class="layer-title-en">MARKET VERDICT</div>
-              <div class="{verdict['badge_cls']}">{badge_text} · 시장점수 {score_mkt}/8</div>
-              <div style="height:8px;"></div>
-
-              <div style="line-height:1.55;">
-                <div>• {verdict['world_line']}</div>
-                <div>• {verdict['etf_line']}</div>
-                <div>• {verdict['idx_line']}</div>
-                <div>• {verdict['bt_line']}</div>
-              </div>
-
-              <div style="height:10px;"></div>
-              <div style="font-weight:700;">{verdict['c1']}</div>
-              <div class="small-muted" style="margin-top:2px;">{verdict['c2']}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
 
         nas = fut.get("nasdaq", {})
         es = fut.get("sp500", {})
@@ -1431,6 +1311,7 @@ with col_main:
         st.markdown("---")
 
         # BIG TECH LAYER
+        bt_score = bigtech_layer.get("score", 0)
         bt_items = bigtech_layer.get("items", [])
         st.markdown('<div class="card-soft">', unsafe_allow_html=True)
         st.markdown('<div class="layer-title-en">BIG TECH LAYER</div>', unsafe_allow_html=True)
@@ -1516,6 +1397,20 @@ with col_main:
     run = run_click or run_from_side
     st.session_state["run_from_side"] = False
 
+    # ✅ 분석 버튼을 눌렀다면, 결과 유지용 세션을 저장
+    if run:
+        st.session_state["show_result"] = True
+        st.session_state["analysis_params"] = {
+            "user_symbol": user_symbol,
+            "holding_type": holding_type,
+            "mode_name": mode_name,
+            "commission_pct": commission_pct,
+            "avg_price": float(avg_price or 0.0),
+            "shares": int(shares or 0),
+        }
+        st.session_state["scroll_to"] = "analysis_result_anchor"
+
+    # ✅ 저장된 결과가 있으면, rerun 되어도 그 결과를 그대로 보여주기
     if st.session_state.get("show_result") and st.session_state.get("analysis_params"):
         _p = st.session_state.get("analysis_params") or {}
         user_symbol = _p.get("user_symbol", user_symbol)
@@ -1525,18 +1420,6 @@ with col_main:
         avg_price = float(_p.get("avg_price", avg_price or 0.0) or 0.0)
         shares = int(_p.get("shares", shares or 0) or 0)
         cfg = get_mode_config(mode_name)
-        st.session_state["scroll_to_result"] = True
-
-    if run:
-        st.session_state["show_result"] = True
-        st.session_state["analysis_params"] = {
-            "user_symbol": user_symbol,
-            "holding_type": holding_type,
-            "mode_name": mode_name,
-            "commission_pct": commission_pct,
-            "avg_price": avg_price,
-            "shares": shares,
-        }
 
     # ========== 스캐너 (번잡함 방지: Expander + 닫기 버튼) ==========
     with st.expander("🛰 신규 진입 스캐너 (간단 버전)", expanded=False):
@@ -1587,11 +1470,11 @@ with col_main:
 
                 if scan_clicked_symbol is not None:
                     st.session_state["pending_symbol"] = scan_clicked_symbol
-                    st.session_state["scroll_to_result"] = True
+                    st.session_state["scroll_to"] = "analysis_result_anchor"
                     st.rerun()
 
-    # 분석 실행 안했으면 종료
-    if not run:
+    # ✅ 분석 결과도 없고, 이번에도 run 안 했으면 멈춤
+    if not st.session_state.get("show_result", False):
         st.stop()
 
     # ==========================
@@ -1632,7 +1515,6 @@ with col_main:
 
     buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, cfg)
 
-    # 신규 진입이면 손절 로직을 “매수 가설 실패” 기준으로 재정의
     if holding_type == "신규 진입 검토" and buy_low is not None:
         sl0 = buy_low * 0.97
         sl1 = buy_low * 0.94
@@ -1653,7 +1535,6 @@ with col_main:
 
     ext_price = get_last_extended_price(symbol)
 
-    # 즐겨찾기
     is_fav = symbol in st.session_state["favorite_symbols"]
     fav_new = st.checkbox("⭐ 이 종목 즐겨찾기", value=is_fav)
     if fav_new and not is_fav:
@@ -1668,21 +1549,23 @@ with col_main:
     # 결과 출력 + 자동 스크롤
     # ==========================
     st.markdown('<div id="analysis_result_anchor"></div>', unsafe_allow_html=True)
-    if st.session_state.get("scroll_to_result", False):
+
+    # ✅ 스크롤 타겟(분석/AI)에 따라 이동
+    if st.session_state.get("scroll_to"):
+        target = st.session_state["scroll_to"]
         st.markdown(
-            """
+            f"""
             <script>
-              setTimeout(function () {
-                var el = document.getElementById("analysis_result_anchor");
-                if (el) { el.scrollIntoView({behavior: "smooth", block: "start"}); }
-              }, 250);
+              setTimeout(function () {{
+                var el = document.getElementById("{target}");
+                if (el) {{ el.scrollIntoView({{behavior: "smooth", block: "start"}}); }}
+              }}, 250);
             </script>
             """,
             unsafe_allow_html=True,
         )
-        st.session_state["scroll_to_result"] = False
+        st.session_state["scroll_to"] = None
 
-    # 결과 닫기(화면에서 숨김)
     col_close1, col_close2 = st.columns([1, 6])
     with col_close1:
         if st.button("🧹 결과 닫기", key="close_result"):
@@ -1838,10 +1721,11 @@ with col_main:
         st.write(a)
 
     # =====================================
-    # 🤖 AI 해석 (가격 행동 플랜 버전)
+    # ✅ 🤖 AI 행동 플랜 (루프 밖으로 뺌 = 안정화 핵심)
     # =====================================
-    st.subheader("🤖 AI 행동 플랜 (가격 기준)")
-    st.caption("※ 지표 설명이 아니라, '몇 달러에서 무엇을 할지'만 정리합니다. (확정 매수/매도 지시 X)")
+    st.markdown('<div id="ai_result_anchor"></div>', unsafe_allow_html=True)
+    st.subheader("🤖 AI 행동 플랜")
+    st.caption("※ AI는 확정 매수/매도 지시가 아니라, '조건부 행동 플랜(If-Then)'으로 해석만 제공합니다.")
 
     try:
         cache_key = _ai_make_cache_key(symbol, holding_type, mode_name, avg_price, last, label_mkt)
@@ -1849,7 +1733,7 @@ with col_main:
         cache_key = None
 
     cached = (cache_key is not None and cache_key in st.session_state.get("ai_cache", {}))
-    btn_label = "🔁 AI 플랜 다시 생성" if cached else "✨ AI 플랜 생성"
+    btn_label = "🔁 AI 행동 플랜 다시 생성" if cached else "✨ AI 행동 플랜 보기"
 
     st.button(
         btn_label,
@@ -1861,23 +1745,29 @@ with col_main:
         st.session_state["ai_request"] = False
 
         levels_dict = {
-            "price": price,
-            "avg_price": avg_price,
             "buy_low": buy_low, "buy_high": buy_high,
             "tp0": tp0, "tp1": tp1, "tp2": tp2,
             "sl0": sl0, "sl1": sl1,
         }
 
         extra_notes = [
-            f"시장: {label_mkt} (score {score_mkt}/8)",
+            f"시장점수: {score_mkt} / label: {label_mkt}",
             f"신호: {signal}",
+            f"단기흐름: {bias_comment}",
+            f"갭: {gap_comment}",
         ]
         if rr is not None:
-            extra_notes.append(f"RR: {rr:.2f}:1")
+            extra_notes.append(f"손익비(RR): {rr:.2f}:1")
+        if holding_type == "보유 중" and avg_price > 0:
+            extra_notes.append(f"평단 대비: {(price/avg_price-1)*100:+.2f}%")
+        if gap_pct is not None:
+            extra_notes.append(f"갭%: {gap_pct:+.2f}%")
+        if atr14 is not None:
+            extra_notes.append(f"ATR14: {atr14:.2f}")
 
         with st.spinner("AI 행동 플랜 생성 중..."):
             ai_model_name = st.session_state.get("ai_model_name", "gpt-4o-mini")
-            parsed, err = ai_action_plan_price_only(
+            parsed, err = ai_make_action_plan(
                 symbol=symbol,
                 holding_type=holding_type,
                 mode_name=mode_name,
@@ -1886,12 +1776,14 @@ with col_main:
                 price=price,
                 avg_price=avg_price,
                 signal=signal,
+                bias_comment=bias_comment,
+                gap_comment=gap_comment,
                 rr=rr,
                 levels=levels_dict,
+                last_row=last,
                 extra_notes=extra_notes,
                 model_name=ai_model_name,
             )
-
         if parsed:
             if cache_key:
                 st.session_state["ai_cache"][cache_key] = parsed
@@ -1904,91 +1796,61 @@ with col_main:
         ai_out = st.session_state["ai_cache"][cache_key]
 
     if ai_out is not None:
-        stance = str(ai_out.get("ai_stance", "")).strip()
-        pf = ai_out.get("price_focus", {}) or {}
-        plans = ai_out.get("plans", []) or []
-        triggers = ai_out.get("key_triggers", []) or []
-        guide = ai_out.get("level_guide", {}) or {}
+        stance = str(ai_out.get("stance_one_line", "")).strip()
+        plans = ai_out.get("action_plans", [])
+        triggers = ai_out.get("top_triggers", [])
+        trans = ai_out.get("level_translation", {})
 
         if stance:
             st.markdown(
                 f"""
                 <div class="card-soft">
                   <div class="layer-title-en">AI STANCE</div>
-                  <div style="font-size:1.05rem;font-weight:800;line-height:1.35;">{stance}</div>
+                  <div style="font-size:1.05rem;font-weight:700;line-height:1.35;">{stance}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-        # 핵심 가격 3개: watch / confirm / invalidate
-        st.markdown(
-            f"""
-            <div class="card-soft-sm">
-              <div style="font-weight:800;margin-bottom:6px;">🎯 지금부터 보는 핵심 가격 3개</div>
-              <div class="small-muted" style="line-height:1.6;">
-                • 관찰: {pf.get("watch","")}</br>
-                • 확인: {pf.get("confirm","")}</br>
-                • 무효화: {pf.get("invalidate","")}
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        if isinstance(plans, list) and len(plans) >= 3:
+            cols = st.columns(3)
+            for i in range(3):
+                p = plans[i] or {}
+                with cols[i]:
+                    st.markdown(
+                        f"""
+                        <div class="card-soft-sm">
+                          <div style="font-weight:800;margin-bottom:6px;">{p.get('plan','PLAN')}</div>
+                          <div class="small-muted"><b>WHEN</b> · {p.get('when','')}</div>
+                          <div class="small-muted" style="margin-top:6px;"><b>ACTION</b> · {p.get('action','')}</div>
+                          <div class="small-muted" style="margin-top:6px;"><b>INVALID</b> · {p.get('invalid','')}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
 
-        # 플랜 2개만 (복잡도 방지)
-        plans = plans[:2]
-        cols = st.columns(2)
-        for i, p in enumerate(plans):
-            with cols[i]:
-                st.markdown(
-                    f"""
-                    <div class="card-soft">
-                      <div class="layer-title-en">{p.get("name","PLAN")}</div>
-                      <div style="font-weight:800;">WHEN</div>
-                      <div class="small-muted" style="margin-bottom:8px;line-height:1.5;">{p.get("when","")}</div>
+        if isinstance(triggers, list) and triggers:
+            st.markdown('<div class="card-soft-sm">', unsafe_allow_html=True)
+            st.markdown('<div style="font-weight:800;margin-bottom:6px;">🎛 핵심 트리거 3개</div>', unsafe_allow_html=True)
+            for t in triggers[:3]:
+                st.markdown(f"<div class='small-muted'>- {t}</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
-                      <div style="font-weight:800;">ACTION</div>
-                      <div class="small-muted" style="margin-bottom:8px;line-height:1.5;">{p.get("action","")}</div>
-
-                      <div style="font-weight:800;">INVALID</div>
-                      <div class="small-muted" style="line-height:1.5;">{p.get("invalid","")}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-        if triggers:
-            st.markdown(
-                f"""
-                <div class="card-soft-sm">
-                  <div style="font-weight:800;margin-bottom:6px;">🎛 핵심 트리거 3개</div>
-                  <div class="small-muted" style="line-height:1.6;">
-                    • {triggers[0] if len(triggers)>0 else ""}</br>
-                    • {triggers[1] if len(triggers)>1 else ""}</br>
-                    • {triggers[2] if len(triggers)>2 else ""}</br>
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        st.markdown(
-            f"""
-            <div class="card-soft-sm">
-              <div style="font-weight:800;margin-bottom:6px;">🗺 레벨 의미 번역</div>
-              <div class="small-muted" style="line-height:1.6;">
-                • buy_band: {guide.get("buy_band","")}</br>
-                • tp: {guide.get("tp","")}</br>
-                • sl: {guide.get("sl","")}
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        if isinstance(trans, dict) and trans:
+            st.markdown('<div class="card-soft-sm">', unsafe_allow_html=True)
+            st.markdown('<div style="font-weight:800;margin-bottom:6px;">🗺 레벨 의미 번역</div>', unsafe_allow_html=True)
+            if trans.get("buy_band"):
+                st.markdown(f"<div class='small-muted'><b>buy_band</b> · {trans['buy_band']}</div>", unsafe_allow_html=True)
+            if trans.get("tp"):
+                st.markdown(f"<div class='small-muted'><b>tp</b> · {trans['tp']}</div>", unsafe_allow_html=True)
+            if trans.get("sl"):
+                st.markdown(f"<div class='small-muted'><b>sl</b> · {trans['sl']}</div>", unsafe_allow_html=True)
+            if trans.get("ma_bb"):
+                st.markdown(f"<div class='small-muted'><b>ma_bb</b> · {trans['ma_bb']}</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
     else:
-        st.info("AI 플랜은 버튼을 누를 때만 생성됩니다. (Streamlit Secrets에 OPENAI_API_KEY가 있어야 합니다.)")
+        st.info("AI 행동 플랜은 버튼을 누를 때만 생성됩니다. (Streamlit Secrets에 OPENAI_API_KEY가 있어야 합니다.)")
 
     st.subheader("📈 가격/볼린저밴드 차트 (단순 표시)")
     chart_df = df[["Close", "MA20", "BBL", "BBU"]].tail(120)
