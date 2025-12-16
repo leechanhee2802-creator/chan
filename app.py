@@ -655,6 +655,10 @@ def compute_market_verdict_scores(overview: dict):
 
 # =====================================
 # 옵션 OI / PCR (무료: yfinance 옵션체인)
+# ✅ 패치 3종 반영:
+#   1) price_ref 표시(표시부에서)
+#   2) PCR: 전체(all) + 근처(near) 분리 계산
+#   3) sanity check: put은 price_ref 아래, call은 price_ref 위 아니면 무효 처리
 # =====================================
 @st.cache_data(ttl=300)
 def get_option_chain_near(symbol: str):
@@ -675,43 +679,58 @@ def get_option_chain_near(symbol: str):
     except Exception:
         return None
 
-def _pick_oi_level(df: pd.DataFrame, side: str, price_ref: float, top_n: int = 40, max_dist_pct: float = 0.25):
-    """
-    ✅ 핵심: 현재가 근처(±25%)에서만 OI 레벨 뽑기
-    side:
-      - put_support : 현재가 아래쪽에서 "방어" 후보
-      - call_resist : 현재가 위쪽에서 "저항" 후보
-    """
+def _prep_oi_df(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
-        return None
-
+        return pd.DataFrame()
     work = df.copy()
     if "openInterest" not in work.columns or "strike" not in work.columns:
-        return None
-
+        return pd.DataFrame()
     work["openInterest"] = pd.to_numeric(work["openInterest"], errors="coerce").fillna(0)
     work["strike"] = pd.to_numeric(work["strike"], errors="coerce").fillna(np.nan)
     work = work.dropna(subset=["strike"])
     work = work[work["openInterest"] > 0]
+    return work
+
+def _filter_near_strikes(work: pd.DataFrame, price_ref: float, max_dist_pct: float):
+    if work is None or work.empty:
+        return pd.DataFrame()
+    if price_ref is None or price_ref <= 0:
+        return work.copy()
+
+    w = work.copy()
+    w["dist_pct"] = (w["strike"] - price_ref).abs() / price_ref
+    near = w[w["dist_pct"] <= max_dist_pct]
+
+    # 너무 적으면 범위 조금 확장
+    if near.shape[0] < 8:
+        near = w[w["dist_pct"] <= max_dist_pct * 1.5]
+
+    # 그래도 없으면 fallback: dist 가장 가까운 애들
+    if near.empty:
+        near = w.sort_values("dist_pct", ascending=True).head(20)
+
+    return near
+
+def _pick_oi_level(df: pd.DataFrame, side: str, price_ref: float, top_n: int = 40, max_dist_pct: float = 0.25):
+    """
+    ✅ 핵심: 현재가 근처(±max_dist_pct)에서만 OI 레벨 뽑기
+    side:
+      - put_support : 현재가 아래쪽에서 "방어" 후보
+      - call_resist : 현재가 위쪽에서 "저항" 후보
+    """
+    work = _prep_oi_df(df)
+    if work.empty:
+        return None
 
     if price_ref is None or price_ref <= 0:
         row = work.sort_values("openInterest", ascending=False).head(1).iloc[0]
         return float(row["strike"]), int(row["openInterest"])
 
-    # ✅ 1) 현재가 근처만 남기기
-    work["dist_pct"] = (work["strike"] - price_ref).abs() / price_ref
-    near = work[work["dist_pct"] <= max_dist_pct]
-
-    # 너무 적으면 범위 조금 확장(±37.5%)
-    if near.shape[0] < 8:
-        near = work[work["dist_pct"] <= max_dist_pct * 1.5]
-
-    # 그래도 없으면 가장 가까운 strike로 fallback
+    near = _filter_near_strikes(work, price_ref=price_ref, max_dist_pct=max_dist_pct)
     if near.empty:
-        row = work.sort_values("dist_pct", ascending=True).head(1).iloc[0]
+        row = work.sort_values("openInterest", ascending=False).head(1).iloc[0]
         return float(row["strike"]), int(row["openInterest"])
 
-    # OI 상위 일부만
     near = near.sort_values("openInterest", ascending=False).head(max(10, top_n))
 
     if side == "put_support":
@@ -737,8 +756,10 @@ def compute_options_levels(symbol: str, price_ref: float, max_dist_pct: float = 
     반환:
       put_support_strike, put_oi
       call_resist_strike, call_oi
-      pcr (puts_oi / calls_oi)
+      pcr_all (전체 체인 기준)
+      pcr_near (현재가 근처 범위 기준)
       exp, dte
+      sanity flags (표시/결론에 사용)
     """
     oc = get_option_chain_near(symbol)
     if not oc:
@@ -751,13 +772,29 @@ def compute_options_levels(symbol: str, price_ref: float, max_dist_pct: float = 
     put_level = _pick_oi_level(puts, "put_support", price_ref, max_dist_pct=max_dist_pct)
     call_level = _pick_oi_level(calls, "call_resist", price_ref, max_dist_pct=max_dist_pct)
 
-    # PCR은 "쏠림 경고" 용도
+    # ✅ (A) PCR(all)
+    pcr_all = None
     try:
-        total_put_oi = float(pd.to_numeric(puts.get("openInterest"), errors="coerce").fillna(0).sum())
-        total_call_oi = float(pd.to_numeric(calls.get("openInterest"), errors="coerce").fillna(0).sum())
-        pcr = (total_put_oi / total_call_oi) if total_call_oi > 0 else None
+        puts_w = _prep_oi_df(puts)
+        calls_w = _prep_oi_df(calls)
+        total_put_oi_all = float(puts_w["openInterest"].sum()) if not puts_w.empty else 0.0
+        total_call_oi_all = float(calls_w["openInterest"].sum()) if not calls_w.empty else 0.0
+        pcr_all = (total_put_oi_all / total_call_oi_all) if total_call_oi_all > 0 else None
     except Exception:
-        pcr = None
+        pcr_all = None
+
+    # ✅ (B) PCR(near) - 레벨과 같은 범위 개념으로 계산
+    pcr_near = None
+    try:
+        puts_w = _prep_oi_df(puts)
+        calls_w = _prep_oi_df(calls)
+        near_puts = _filter_near_strikes(puts_w, price_ref=price_ref, max_dist_pct=max_dist_pct)
+        near_calls = _filter_near_strikes(calls_w, price_ref=price_ref, max_dist_pct=max_dist_pct)
+        total_put_oi_near = float(near_puts["openInterest"].sum()) if not near_puts.empty else 0.0
+        total_call_oi_near = float(near_calls["openInterest"].sum()) if not near_calls.empty else 0.0
+        pcr_near = (total_put_oi_near / total_call_oi_near) if total_call_oi_near > 0 else None
+    except Exception:
+        pcr_near = None
 
     # DTE 계산
     try:
@@ -767,12 +804,38 @@ def compute_options_levels(symbol: str, price_ref: float, max_dist_pct: float = 
     except Exception:
         dte = None
 
+    # ✅ sanity check: put은 아래, call은 위가 아니면 무효 처리
+    put_obj = {"strike": put_level[0], "oi": put_level[1]} if put_level else None
+    call_obj = {"strike": call_level[0], "oi": call_level[1]} if call_level else None
+
+    put_ok = True
+    call_ok = True
+    if put_obj and price_ref is not None and price_ref > 0:
+        if float(put_obj["strike"]) > float(price_ref) * 1.001:
+            put_ok = False
+    if call_obj and price_ref is not None and price_ref > 0:
+        if float(call_obj["strike"]) < float(price_ref) * 0.999:
+            call_ok = False
+
+    if not put_ok:
+        put_obj = None
+    if not call_ok:
+        call_obj = None
+
+    sanity_ok = bool(put_ok and call_ok)
+
     return {
         "exp": exp,
         "dte": dte,
-        "put": {"strike": put_level[0], "oi": put_level[1]} if put_level else None,
-        "call": {"strike": call_level[0], "oi": call_level[1]} if call_level else None,
-        "pcr": pcr,
+        "put": put_obj,
+        "call": call_obj,
+        "pcr_all": pcr_all,
+        "pcr_near": pcr_near,
+        "sanity": {
+            "put_ok": put_ok,
+            "call_ok": call_ok,
+            "ok": sanity_ok,
+        },
     }
 
 # =====================================
@@ -840,6 +903,7 @@ def get_intraday_5m(symbol: str):
         return df[["Open", "High", "Low", "Close", "Volume"]].dropna()
     except Exception:
         return pd.DataFrame()
+
 # =====================================
 # AI 해석(요약/헷갈림 설명) 유틸
 # =====================================
@@ -939,7 +1003,6 @@ def ai_summarize_and_explain(
         "반드시 JSON만 출력한다."
     )
 
-    # 보유/신규에 따라 문구 초점만 다르게
     if holding_type == "보유 중":
         focus2 = "평단/손절/익절 기준으로 '지금 유지/축소/추가매수'가 각각 언제 안전한지"
     else:
@@ -949,6 +1012,7 @@ def ai_summarize_and_explain(
         "아래 데이터는 기술적 지표 기반으로 계산된 '가격 레벨' 데이터다.\n"
         "너는 차트 용어를 쓰지 말고, 사람에게 바로 도움이 되는 '행동지침'으로만 써라.\n"
         "특히 옵션 OI 지지/저항(options.put/call)이 있으면 기술적 레벨과 합쳐서 더 직관적으로 써라.\n"
+        "PCR은 참고치이며, 가능하면 pcr_near(근처)와 pcr_all(전체)을 구분해 해석하라.\n"
         "반드시 아래 JSON 형태로만 출력해라(키/구조/타입 고정).\n\n"
         "{\n"
         "  \"summary_one_line\": \"(예: 지금은 대기, $X 아래 오면 1차 시작 / $Y 위로는 확인 후 따라가기)\",\n"
@@ -1707,7 +1771,7 @@ with col_main:
         ext_price = get_last_extended_price(symbol)
         price_ref = float(ext_price) if ext_price is not None else float(last["Close"])
 
-        # ✅ 옵션 OI 보조지표 계산(현재가 근처 필터)
+        # ✅ 옵션 OI 보조지표 계산(현재가 근처 필터 + PCR near/all + sanity)
         opt = compute_options_levels(symbol, price_ref=price_ref, max_dist_pct=cfg["oi_dist"])
 
     if symbol not in st.session_state["recent_symbols"]:
@@ -1903,17 +1967,24 @@ with col_main:
             st.caption("손익비 계산 불가 (TP/SL이 애매한 위치)")
 
     # =============================
-    # 옵션 OI 보조지표 표시
+    # ✅ 옵션 OI 보조지표 표시 (패치 반영)
     # =============================
     st.subheader("🧩 옵션 보조지표 (OI 지지/저항 + 만기 + PCR)")
     if opt:
         exp = opt.get("exp")
         dte = opt.get("dte")
-        pcr = opt.get("pcr")
         put = opt.get("put")
         call = opt.get("call")
+        pcr_all = opt.get("pcr_all")
+        pcr_near = opt.get("pcr_near")
+        sanity = opt.get("sanity") or {}
+        sanity_ok = bool(sanity.get("ok", True))
 
         chips = []
+
+        # ✅ price_ref(최근가) 표시
+        chips.append(f'<span class="chip chip-blue">최근가 기준(price_ref) {price_ref:.2f}</span>')
+
         if dte is not None:
             if dte <= 2:
                 chips.append(f'<span class="chip chip-amber">⚠ 만기 임박 DTE {dte}</span>')
@@ -1921,14 +1992,22 @@ with col_main:
                 chips.append(f'<span class="chip chip-blue">만기 DTE {dte}</span>')
         if exp:
             chips.append(f'<span class="chip chip-blue">만기 {exp}</span>')
-        if pcr is not None:
-            # 쏠림 경고만
-            if pcr >= 1.2:
-                chips.append(f'<span class="chip chip-blue">PCR {pcr:.2f} (공포 쏠림)</span>')
-            elif pcr <= 0.8:
-                chips.append(f'<span class="chip chip-blue">PCR {pcr:.2f} (낙관 쏠림)</span>')
+
+        # ✅ PCR near/all 분리 표기 (쏠림 경고는 near 우선)
+        if pcr_near is not None:
+            if pcr_near >= 1.2:
+                chips.append(f'<span class="chip chip-blue">PCR(near) {pcr_near:.2f} (공포 쏠림)</span>')
+            elif pcr_near <= 0.8:
+                chips.append(f'<span class="chip chip-blue">PCR(near) {pcr_near:.2f} (낙관 쏠림)</span>')
             else:
-                chips.append(f'<span class="chip chip-blue">PCR {pcr:.2f} (중립)</span>')
+                chips.append(f'<span class="chip chip-blue">PCR(near) {pcr_near:.2f} (중립)</span>')
+
+        if pcr_all is not None:
+            chips.append(f'<span class="chip chip-blue">PCR(all) {pcr_all:.2f}</span>')
+
+        # ✅ sanity 경고
+        if not sanity_ok:
+            chips.append('<span class="chip chip-amber">⚠ 옵션레벨 일부 무효(가격축 불일치)</span>')
 
         st.markdown(
             f"""
@@ -1940,39 +2019,46 @@ with col_main:
               </div>
               <div class="small-muted" style="line-height:1.6;">
                 • 이 레이어는 "방향 예측"이 아니라, <b>가격이 반응하기 쉬운 자리(지지/저항)</b>를 보강합니다.<br/>
-                • 값이 이상하게 튀는 현상을 막기 위해 <b>현재가 근처 strike만</b> 사용합니다.
+                • 값이 이상하게 튀는 현상을 막기 위해 <b>현재가 근처 strike만</b> 사용합니다.<br/>
+                • <b>PCR(near)</b>는 위의 OI 범위(근처) 기준, <b>PCR(all)</b>은 전체 체인 기준입니다.
               </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        # 레벨 보강 문구(직관형)
+        # 레벨 표시(무효면 None 처리되어 “데이터 부족”으로 떨어짐)
         if put:
             st.write(f"- 옵션 풋 방어: **{put['strike']:.2f}** (OI 집중 {put['oi']:,})")
         else:
-            st.write("- 옵션 풋 방어: 데이터 부족")
+            st.write("- 옵션 풋 방어: 데이터 부족/무효(가격축 불일치)")
 
         if call:
             st.write(f"- 옵션 콜 저항: **{call['strike']:.2f}** (OI 집중 {call['oi']:,})")
         else:
-            st.write("- 옵션 콜 저항: 데이터 부족")
+            st.write("- 옵션 콜 저항: 데이터 부족/무효(가격축 불일치)")
 
-        # “행동지침형” 한 줄 보강
+        # “행동지침형” 한 줄 보강 (✅ 축이 맞을 때만)
         guide_lines = []
-        if put and buy_low is not None:
+        if put and buy_low is not None and float(put["strike"]) <= float(price_ref) * 1.001:
             guide_lines.append(f"하방: 기술적 {buy_low:.2f} + 옵션 풋 {put['strike']:.2f} → **2중 지지**")
-        elif put:
+        elif put and float(put["strike"]) <= float(price_ref) * 1.001:
             guide_lines.append(f"하방: 옵션 풋 {put['strike']:.2f} 근처는 **방어 반응** 가능")
-        if call and tp1 is not None:
+
+        if call and tp1 is not None and float(call["strike"]) >= float(price_ref) * 0.999:
             guide_lines.append(f"상방: 기술적 목표 {tp1:.2f} + 옵션 콜 {call['strike']:.2f} → **저항/가속 분기점**")
-        elif call:
+        elif call and float(call["strike"]) >= float(price_ref) * 0.999:
             guide_lines.append(f"상방: 옵션 콜 {call['strike']:.2f} 근처는 **저항 반응** 가능")
 
         if guide_lines:
             st.markdown("**📌 가격 레벨 보강(직관)**")
             for gl in guide_lines:
                 st.write(f"- {gl}")
+
+        # ✅ 축 불일치가 뜨면, 사용자가 바로 원인 인지하도록 한 줄 안내
+        if not sanity_ok:
+            st.info("옵션 레벨이 현재가(price_ref)와 축이 맞지 않아 일부를 자동 무효 처리했습니다. (yfinance 옵션체인 데이터가 일시적으로 튈 때 방어용)")
+
     else:
         st.info("옵션 데이터(옵션 체인)를 불러오지 못했습니다. (해당 종목/시간대에 옵션 제공이 없거나 yfinance 제한일 수 있음)")
 
@@ -2064,9 +2150,11 @@ with col_main:
             option_levels = {
                 "exp": opt.get("exp"),
                 "dte": opt.get("dte"),
-                "pcr": opt.get("pcr"),
+                "pcr_near": opt.get("pcr_near"),
+                "pcr_all": opt.get("pcr_all"),
                 "put": opt.get("put"),
                 "call": opt.get("call"),
+                "sanity": opt.get("sanity"),
             }
 
         extra_notes = [
@@ -2148,7 +2236,6 @@ with col_main:
                     )
     else:
         st.info("AI 해석은 버튼을 누를 때만 생성됩니다. (Streamlit Secrets에 OPENAI_API_KEY가 있어야 합니다.)")
-
     st.subheader("📈 가격/볼린저밴드 차트 (단순 표시)")
     chart_df = df[["Close", "MA20", "BBL", "BBU"]].tail(120)
     st.line_chart(chart_df)
