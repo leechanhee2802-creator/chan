@@ -9,6 +9,7 @@ try:
     from openai import OpenAI
 except Exception:
     OpenAI = None
+
 import os
 import json
 import re
@@ -291,6 +292,10 @@ def get_usdkrw_rate():
         return 1350.0
 
 def get_last_extended_price(symbol: str):
+    """
+    프리/정규/애프터 포함 가장 최근 1분봉 Close를 사용(있으면).
+    - "상태 전환" 판정에 사용 (타협안)
+    """
     try:
         t = yf.Ticker(symbol)
         df = t.history(period="1d", interval="1m", auto_adjust=False, prepost=True)
@@ -417,6 +422,7 @@ def get_us_market_overview():
         "dxy_state": dxy_state,
     }
 
+    # [추가] 지수(확정)용: 나스닥/ S&P 지수 변화(정규장 기준)
     ixic_last, ixic_chg, ixic_state = safe_last_change_info("^IXIC")
     gspc_last, gspc_chg, gspc_state = safe_last_change_info("^GSPC")
     overview["indexes"] = {
@@ -524,7 +530,7 @@ def compute_market_score(overview: dict):
     return score, label, " · ".join(details)
 
 # =========================================================
-# 추가: market verdict helpers
+# 시장 판독(점수) + 장 상태 배지
 # =========================================================
 def _clamp(x, lo=0.0, hi=100.0):
     try:
@@ -554,14 +560,12 @@ def market_state_badge_from_etfs(etfs: list):
             if ms:
                 stt = ms
                 break
-
     if stt == "PRE":
         return "🟡 프리장", "chip chip-blue"
     if stt == "POST":
         return "🟣 애프터장", "chip chip-blue"
     if stt == "REGULAR":
         return "🟢 정규장", "chip chip-green"
-
     if stt:
         return f"⚪ 장 상태: {stt}", "chip chip-blue"
     return "⚪ 장 상태: 확인중", "chip chip-blue"
@@ -654,7 +658,7 @@ def compute_market_verdict_scores(overview: dict):
     }
 
 # =====================================
-# 가격 데이터 + 지표
+# 가격 데이터 + 지표 (레벨 계산은 일봉)
 # =====================================
 def get_price_data(symbol, period="6mo"):
     if not symbol or symbol.strip() == "":
@@ -719,16 +723,16 @@ def get_intraday_5m(symbol: str):
     except Exception:
         return pd.DataFrame()
 
-
 # =====================================
-# AI 해석(요약/헷갈림 설명) 유틸
+# AI 해석 유틸 (상태 머신 반영)
 # =====================================
-def _ai_make_cache_key(symbol: str, holding_type: str, mode_name: str, avg_price: float, df_last: pd.Series, market_label: str):
+def _ai_make_cache_key(symbol: str, holding_type: str, mode_name: str, avg_price: float, df_last: pd.Series, market_label: str, state_name: str, live_price: float):
     payload = {
         "symbol": symbol,
         "holding_type": holding_type,
         "mode": mode_name,
         "avg_price": round(float(avg_price or 0.0), 4),
+        "live_price": round(float(live_price or 0.0), 4),
         "close": round(float(df_last.get("Close", 0.0)), 4),
         "ma20": round(float(df_last.get("MA20", 0.0)), 4),
         "bbl": round(float(df_last.get("BBL", 0.0)), 4),
@@ -736,6 +740,7 @@ def _ai_make_cache_key(symbol: str, holding_type: str, mode_name: str, avg_price
         "rsi": round(float(df_last.get("RSI14", 0.0)), 4),
         "macd": round(float(df_last.get("MACD", 0.0)), 4),
         "macds": round(float(df_last.get("MACD_SIGNAL", 0.0)), 4),
+        "state": state_name,
         "market": market_label,
     }
     s = json.dumps(payload, ensure_ascii=False, sort_keys=True)
@@ -758,9 +763,11 @@ def ai_summarize_and_explain(
     mode_name: str,
     market_label: str,
     market_detail: str,
-    price: float,
+    live_price: float,
+    day_close: float,
     avg_price: float,
-    signal: str,
+    state_name: str,
+    action_text: str,
     bias_comment: str,
     gap_comment: str,
     rr: float,
@@ -782,11 +789,11 @@ def ai_summarize_and_explain(
         "holding_type": holding_type,
         "mode": mode_name,
         "market": {"label": market_label, "detail": market_detail},
-        "price": price,
+        "price_now": live_price,        # ✅ 상태 전환 기준(프리/애프터 포함 최근가)
+        "price_day_close": day_close,    # ✅ 레벨 계산 기준(일봉 종가/지표)
         "avg_price": avg_price,
-        "signal": signal,
-        "bias": bias_comment,
-        "gap": gap_comment,
+        "state": state_name,            # ✅ 상태 머신 결과
+        "action": action_text,          # ✅ 앱이 만든 행동지침(가격조건 포함)
         "rr_ratio": rr,
         "levels": levels,
         "indicators": {
@@ -796,47 +803,49 @@ def ai_summarize_and_explain(
             "RSI14": float(last_row["RSI14"]),
             "MACD": float(last_row["MACD"]),
             "MACD_SIGNAL": float(last_row["MACD_SIGNAL"]),
-            "STOCH_K": float(last_row["STOCH_K"]),
-            "STOCH_D": float(last_row["STOCH_D"]),
             "ATR14": float(last_row["ATR14"]),
         },
-        "notes": extra_notes[:8],
+        "notes": extra_notes[:10],
+        "trend_hint": bias_comment,
+        "gap_hint": gap_comment,
     }
 
-    # ✅ 문체/목표: 행동지침 + 가격 중심, 한국어, 직관형
     system = (
         "너는 '주식 자동판독기'의 해석 도우미다. "
-        "확정 매수/매도 지시(무조건 사라/팔아라)는 금지. "
-        "대신 '가격 기준 행동지침'을 매우 직관적으로 설명한다. "
-        "지표 용어(MA20/MACD 등)는 꼭 필요할 때만 최소한으로 쓰고, "
-        "항상 '어느 가격대에서 무엇을 하면 되는지'가 중심이다. "
+        "확정 매수/매도 지시를 하지 말고, "
+        "대신 '가격 기준의 조건부 행동지침'을 아주 직관적으로 정리한다. "
+        "영어/전문용어(MA20, MACD 등)는 가능하면 쓰지 말고, 필요하면 '20일선'처럼 한국어로 짧게만 언급한다. "
         "반드시 JSON만 출력한다."
     )
 
+    # 두 번째 블록 제목 분기
     if holding_type == "보유 중":
-        focus2 = "보유자 기준으로 '유지/축소/익절/손절'을 가격으로 나눠서 설명"
+        title2 = "보유자 관점: 지금 유지/축소 판단 포인트"
+        desc2 = "평단/손절선/목표가 기준으로 '지금 어떤 가격에서 무엇을 하면 되는지'를 2~3줄로 정리"
     else:
-        focus2 = "신규진입 기준으로 '1차/2차 진입 시작가, 손절가, 확인 조건'을 가격으로 설명"
+        title2 = "신규진입 관점: 지금 들어가도 되는지 체크"
+        desc2 = "1차/2차 진입가, 진입 실패가(손절), 회복 확인가(재진입 조건)를 가격으로 2~3줄 정리"
 
     user = (
         "아래 데이터는 기술적 지표 기반의 요약 데이터다.\n"
         "반드시 아래 JSON 형태로만 출력해라(키/구조/타입 고정).\n\n"
         "{\n"
-        "  \"summary_one_line\": \"(예: '지금은 대기, $XXX 아래로 오면 1차 시작 / $YYY 위로는 확인 후 따라가기'처럼 가격+행동을 한 문장)\",\n"
+        "  \"summary_one_line\": \"지금 상태(state) + 현재가(price_now) 기준으로, 딱 한 문장 행동지침(가격조건 포함)\",\n"
         "  \"confusion_explain\": [\n"
         "    {\n"
         "      \"title\": \"지금 가장 안전한 행동(가격 기준)\",\n"
-        "      \"desc\": \"buy_low/buy_high/tp/sl 중 최소 2개 가격을 직접 넣어서 '지금~어디까지는 대기, 어디 오면 1차, 어디 오면 손절/축소'처럼 행동을 써라. 지표는 최대 1~2개만 보조로 언급.\"\n"
+        "      \"desc\": \"반드시 price_now + 레벨(buy/tp/sl/recover 중 2개 이상)을 직접 숫자로 언급해서, 2~4문장으로 행동지침\"\n"
         "    },\n"
         "    {\n"
-        f"      \"title\": \"{focus2}\",\n"
-        f"      \"desc\": \"반드시 가격(평단 또는 buy/tp/sl)을 최소 2개 이상 넣고, '이 가격을 깨면 왜 위험한지 / 이 가격을 넘으면 왜 좋아지는지'를 쉬운 말로 설명.\"\n"
+        f"      \"title\": \"{title2}\",\n"
+        f"      \"desc\": \"{desc2}. 반드시 숫자 레벨 2개 이상 포함\"\n"
         "    }\n"
         "  ]\n"
         "}\n\n"
         "제약:\n"
-        "- 영어 남발 금지, 기술용어 최소화.\n"
-        "- 확정 지시 금지(무조건 사라/팔아라 금지) — 대신 '조건부 행동'으로 말해라.\n"
+        "- '지금 사라/팔아라' 같은 확정 지시는 금지.\n"
+        "- 대신 'XX 밑이면 중단/방어', 'YY 위면 확인 후 접근' 같은 조건부 문장으로.\n"
+        "- 한국어 위주. 영어/전문용어는 최소.\n"
         "- JSON 외 텍스트 출력 금지.\n\n"
         f"DATA:\n{json.dumps(compact, ensure_ascii=False)}"
     )
@@ -845,24 +854,22 @@ def ai_summarize_and_explain(
         resp = client.chat.completions.create(
             model=model_name,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-            temperature=0.2,
+            temperature=0.15,
         )
         text = (resp.choices[0].message.content or "").strip()
         parsed = _ai_extract_json(text)
         if parsed and isinstance(parsed.get("summary_one_line"), str) and isinstance(parsed.get("confusion_explain"), list):
             if len(parsed["confusion_explain"]) >= 2:
                 return parsed, None
-            return None, "AI 응답이 너무 짧습니다(헷갈림 설명 블록 부족)."
+            return None, "AI 응답이 너무 짧습니다(설명 블록 부족)."
         return None, "AI 응답에서 JSON 파싱 실패 (모델이 형식을 어겼습니다)."
     except Exception as e:
         return None, f"AI 호출 실패: {e}"
 
-# ✅ AI 버튼 클릭 시: 분석 결과가 유지되도록 show_result/analysis_params를 같이 살려줌
-def request_ai_generation():
+# ✅ AI 버튼: 결과를 닫지 않게(=run 없이도 show_result 유지) + 스크롤 강제 안 함
+def request_ai_generation(cache_key: str):
+    st.session_state["ai_request_key"] = cache_key
     st.session_state["ai_request"] = True
-    st.session_state["show_result"] = True
-    st.session_state["scroll_to_result"] = True
-
 
 # =====================================
 # 코멘트/판단 함수들
@@ -904,6 +911,9 @@ def get_mode_config(mode_name: str):
         return {"name": "스윙", "period": "6mo", "lookback_short": 15, "lookback_long": 40, "atr_mult": 1.3}
 
 def calc_trend_stops(df: pd.DataFrame, cfg: dict):
+    """
+    ✅ 레벨 계산은 일봉 기반 (스윙 구조)
+    """
     if df.empty:
         return None, None
 
@@ -935,7 +945,10 @@ def calc_trend_stops(df: pd.DataFrame, cfg: dict):
             candidates.append(atr_stop)
 
     if not candidates:
-        return None, None
+        # 이미 구조가 많이 깨진 상태면, 그래도 방어선은 박스 하단 근처로 둔다(표시용)
+        sl0 = box_low * 0.985
+        sl1 = box_low * 0.96
+        return sl0, sl1
 
     sl0 = max(candidates)
     deep_candidate = min(box_low * 0.985, swing_low * 0.985)
@@ -971,66 +984,10 @@ def calc_trend_targets(df: pd.DataFrame, cfg: dict):
 
     return tp0, tp1, tp2
 
-def make_signal(row, avg_price, cfg, fgi=None, main_tp=None, main_sl=None, buy_low=None, buy_high=None):
-    """
-    ✅ '관망'을 세분화: 항상 괄호에 가격 트리거를 넣음
-    """
-    price = float(row["Close"])
-    bbl = float(row["BBL"])
-    bbu = float(row["BBU"])
-    ma20 = float(row["MA20"])
-    k = float(row["STOCH_K"])
-    d = float(row["STOCH_D"])
-    macd = float(row["MACD"])
-    macds = float(row["MACD_SIGNAL"])
-    rsi = float(row["RSI14"])
-
-    fear = (fgi is not None and fgi <= 25)
-    greed = (fgi is not None and fgi >= 75)
-
-    strong_overbought = (price > bbu and k > 80 and rsi > 65 and macd < macds)
-    mild_overbought = (price > ma20 and (k > 70 or rsi > 60))
-    strong_oversold = (price < bbl and k < 20 and d < 20 and rsi < 35)
-
-    # 신규
-    if avg_price <= 0:
-        if fear and price < bbl * 1.02 and k < 30 and rsi < 45:
-            return f"눌림 대기 후 소량 시작 (≈ {bbl*1.02:.2f}↓ 구간)"
-        elif strong_oversold:
-            return f"분할 접근 후보 (≈ {bbl:.2f} 근처 / 이탈 시 방어 필요)"
-        else:
-            if buy_low and buy_high:
-                return f"대기(진입 대기) ({buy_high:.2f} 아래로 내려오면 1차 / {buy_low:.2f} 근처 2차)"
-            return "대기(진입 대기) (가격이 눌릴 때 분할 접근)"
-
-    trend_up = (price > ma20 and macd > macds and rsi >= 45)
-    broken_trend = (main_sl is not None and price < main_sl * 0.995)
-    near_tp_zone = (main_tp is not None and price >= main_tp * 0.95)
-
-    if broken_trend:
-        return f"방어 우선(비중축소/손절 검토) ({main_sl:.2f} 이탈 구간)"
-
-    if main_tp is not None and price >= main_tp * 0.98 and strong_overbought:
-        return f"강한 부분익절 고려 ({main_tp:.2f} 근처 / 과열)"
-    if near_tp_zone and (mild_overbought or rsi > 70):
-        return f"부분익절/비중조절 ({main_tp:.2f} 근처 저항대)"
-
-    if strong_oversold and not broken_trend:
-        if main_sl is not None:
-            return f"분할매수 후보 (눌림) (단, {main_sl:.2f} 이탈 시 방어)"
-        return "분할매수 후보 (눌림)"
-
-    if trend_up:
-        if main_sl is not None and main_tp is not None:
-            return f"보유 유지(추세) ({main_sl:.2f} 아래는 방어 / {main_tp:.2f} 근처는 익절)"
-        return "보유 유지(추세)"
-
-    # 기존 '관망'을 세분화
-    if buy_low and buy_high and main_sl and main_tp:
-        return f"대기(방향 확인) ({buy_high:.2f}↓ 접근 시 재진입 / {main_sl:.2f} 이탈 시 방어 / {main_tp:.2f} 근처는 익절)"
-    return "대기(방향 확인) (지지 확인 후 대응)"
-
 def calc_levels(df, last, cfg):
+    """
+    ✅ 레벨 계산은 일봉 기반 (스윙 구조)
+    """
     if df.empty:
         return None, None, None, None, None, None, None
 
@@ -1078,6 +1035,167 @@ def calc_rr_ratio(price, tp, sl):
         return None
     return reward / risk
 
+# =====================================
+# ✅ 상태 머신: "상태 전환은 현재가(프리/애프터 포함 최근가)"로
+# =====================================
+def compute_state_and_action(
+    holding_type: str,
+    price_now: float,          # ✅ 상태 판정 기준
+    avg_price: float,
+    levels: dict,
+    last_row: pd.Series
+):
+    """
+    반환:
+      state_name: 상태명(대기/1차/2차/진입실패/목표근접/목표도달/보유방어/보유추세 등)
+      action_text: 요약 행동지침(가격조건 포함)  -> 앱 본문/AI에도 그대로 전달
+      recover_level: 진입 실패 이후 "회복 확인가" (재진입 조건) 표시용
+      phase: 내부 분류 (ai 힌트)
+    """
+    buy_low = levels.get("buy_low")
+    buy_high = levels.get("buy_high")
+    tp0 = levels.get("tp0")
+    tp1 = levels.get("tp1")
+    tp2 = levels.get("tp2")
+    sl0 = levels.get("sl0")
+    sl1 = levels.get("sl1")
+
+    # 회복 확인가: "20일선 회복" or "매수 밴드 상단 회복" 중 더 보수적인 값
+    try:
+        ma20 = float(last_row.get("MA20", np.nan))
+    except Exception:
+        ma20 = np.nan
+    recover_candidates = []
+    if buy_high is not None:
+        recover_candidates.append(float(buy_high) * 1.005)
+    if not np.isnan(ma20):
+        recover_candidates.append(float(ma20) * 1.01)
+    recover_level = max(recover_candidates) if recover_candidates else None
+
+    # ---- 신규 진입 ----
+    if holding_type != "보유 중":
+        if price_now is None:
+            return "데이터 부족", "현재가(시외 포함)를 못 불러와서 상태 판정 불가", recover_level, "unknown"
+
+        # 진입 실패(강/약)
+        if sl1 is not None and price_now < float(sl1) * 0.998:
+            return (
+                "진입 실패(강)",
+                f"진입 가설이 크게 깨진 상태. 우선 방어/관망 권장. (회복 확인: {recover_level:.2f} 위 복귀 시 재평가)" if recover_level else
+                "진입 가설이 크게 깨진 상태. 우선 방어/관망 권장. (회복 확인가 재평가 필요)",
+                recover_level,
+                "fail_strong",
+            )
+        if sl0 is not None and price_now < float(sl0) * 0.998:
+            return (
+                "진입 실패(약)",
+                f"진입 가설이 흔들림. 손절/중단 기준 근처. (회복 확인: {recover_level:.2f} 위 복귀 시 다시 보기)" if recover_level else
+                "진입 가설이 흔들림. 손절/중단 기준 근처. (회복 확인가 재평가 필요)",
+                recover_level,
+                "fail_soft",
+            )
+
+        # 2차 구간/1차 구간
+        # (신규진입은 buy_low 아래를 '분할 구간'으로 본다)
+        if buy_low is not None and price_now <= float(buy_low) * 1.005:
+            # 이미 1차 구간 진입
+            if sl0 is not None:
+                return (
+                    "1차 구간 진입",
+                    f"분할 접근 구간. (1차: {buy_low:.2f} 근처 / 실패: {sl0:.2f} 이탈 시 중단)",
+                    recover_level,
+                    "entry_1",
+                )
+            return (
+                "1차 구간 진입",
+                f"분할 접근 구간. (1차: {buy_low:.2f} 근처 / 실패 기준은 별도 재설정 필요)",
+                recover_level,
+                "entry_1",
+            )
+
+        if buy_high is not None and price_now <= float(buy_high) * 1.01:
+            return (
+                "접근 대기(근접)",
+                f"아직은 대기. (1차 시작: {buy_low:.2f} ~ {buy_high:.2f} 접근 시 분할)",
+                recover_level,
+                "wait_near",
+            )
+
+        # 목표가 구간
+        if tp1 is not None and price_now >= float(tp1) * 0.98:
+            return (
+                "목표 구간(상단)",
+                f"상단/저항 근접. 신규진입은 추격보다 확인이 우선. (눌림 시: {buy_high:.2f} 근처 재접근)" if buy_high else
+                "상단/저항 근접. 신규진입은 추격보다 확인이 우선.",
+                recover_level,
+                "tp_zone",
+            )
+
+        # 기본 대기
+        if buy_high is not None and buy_low is not None:
+            return (
+                "대기(접근 전)",
+                f"지금은 접근 전 대기. (1차 시작: {buy_low:.2f} ~ {buy_high:.2f})",
+                recover_level,
+                "wait_far",
+            )
+        return ("대기", "지금은 대기(레벨 계산값 부족).", recover_level, "wait")
+
+    # ---- 보유 중 ----
+    else:
+        if price_now is None:
+            return "데이터 부족", "현재가(시외 포함)를 못 불러와서 상태 판정 불가", recover_level, "unknown"
+
+        # 손절/방어 우선
+        if sl1 is not None and price_now < float(sl1) * 0.998:
+            return (
+                "방어 최우선(강)",
+                f"방어 최우선 구간. (최종 방어선: {sl1:.2f} 하회) 반등 시 {recover_level:.2f} 위 회복 여부 확인" if recover_level else
+                f"방어 최우선 구간. (최종 방어선: {sl1:.2f} 하회)",
+                recover_level,
+                "hold_def_strong",
+            )
+        if sl0 is not None and price_now < float(sl0) * 0.998:
+            return (
+                "방어 우선(약)",
+                f"방어 우선 구간. (0차 방어선: {sl0:.2f} 근처) 회복하면 유지, 재하락하면 비중조절" ,
+                recover_level,
+                "hold_def_soft",
+            )
+
+        # 목표 근접/도달
+        if tp1 is not None and price_now >= float(tp1) * 0.98:
+            return (
+                "익절 구간",
+                f"익절/부분정리 고려 구간. (1차 목표: {tp1:.2f} 근처) 무리한 추가매수는 비추",
+                recover_level,
+                "hold_tp",
+            )
+
+        # 추세 유지/중립
+        if buy_low is not None and price_now >= float(buy_low) * 1.02:
+            return (
+                "유지(추세 유지)",
+                f"유지 중심. (눌림 시 관심: {buy_low:.2f} ~ {buy_high:.2f}) / 이탈 시 방어: {sl0:.2f}" if (buy_high and sl0) else
+                "유지 중심(레벨 일부 부족).",
+                recover_level,
+                "hold_trend",
+            )
+
+        # 애매 구간(세분화)
+        if buy_low is not None and sl0 is not None:
+            return (
+                "애매 구간(대기/정리 고민)",
+                f"애매 구간. (눌림 매수는 {buy_low:.2f} 근처부터 / 방어는 {sl0:.2f} 이탈 시)",
+                recover_level,
+                "hold_amb",
+            )
+
+        return ("보유", "보유 중(레벨 계산값 부족).", recover_level, "hold")
+
+# =====================================
+# 매물대/거래량 관련
+# =====================================
 def get_volume_profile(df: pd.DataFrame, bins: int = 5):
     recent = df.tail(20)
     prices = recent["Close"]
@@ -1202,7 +1320,7 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
             continue
 
         last = df.iloc[-1]
-        price = float(last["Close"])
+        price_close = float(last["Close"])
         rsi = float(last["RSI14"])
 
         buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, cfg)
@@ -1210,9 +1328,9 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
             continue
 
         band_center = (buy_low + buy_high) / 2
-        dist_band_pct = abs(price - band_center) / price * 100
+        dist_band_pct = abs(price_close - band_center) / price_close * 100
 
-        if price < buy_low * 0.97 or price > buy_high * 1.05:
+        if price_close < buy_low * 0.97 or price_close > buy_high * 1.05:
             continue
         if rsi > 65:
             continue
@@ -1228,11 +1346,11 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
         score += max(0, 2 - abs(rsi - 50) / 10)
 
         sl0_new = buy_low * 0.97
-        rr = calc_rr_ratio(price, tp1, sl0_new)
+        rr = calc_rr_ratio(price_close, tp1, sl0_new)
 
         results.append({
             "symbol": sym,
-            "price": price,
+            "price": price_close,
             "rsi": rsi,
             "bias": bias,
             "dist_band": dist_band_pct,
@@ -1267,17 +1385,21 @@ if "scroll_to_result" not in st.session_state:
 if "scan_results" not in st.session_state:
     st.session_state["scan_results"] = None
 
-# ✅ 결과 유지용(중요)
+# ✅ 결과 유지용 (AI 클릭 rerun에도 결과 안 닫히게)
 if "show_result" not in st.session_state:
     st.session_state["show_result"] = False
 if "analysis_params" not in st.session_state:
     st.session_state["analysis_params"] = None
 
+# ✅ AI 캐시/요청 플래그
 if "ai_cache" not in st.session_state:
     st.session_state["ai_cache"] = {}
 if "ai_request" not in st.session_state:
     st.session_state["ai_request"] = False
+if "ai_request_key" not in st.session_state:
+    st.session_state["ai_request_key"] = None
 
+# 사이드 클릭 -> 분석 트리거
 if st.session_state.get("pending_symbol"):
     ps = st.session_state["pending_symbol"]
     st.session_state["symbol_input"] = ps
@@ -1474,6 +1596,7 @@ with col_main:
 
         st.markdown("---")
 
+        # BIG TECH LAYER
         bt_score = bigtech_layer.get("score", 0)
         bt_items = bigtech_layer.get("items", [])
         st.markdown('<div class="card-soft">', unsafe_allow_html=True)
@@ -1493,6 +1616,7 @@ with col_main:
             )
         st.markdown('</div>', unsafe_allow_html=True)
 
+        # SECTOR ROTATION LAYER
         sec_score = sector_layer.get("score", 0)
         sec_items = sector_layer.get("items", [])
         st.markdown('<div class="card-soft">', unsafe_allow_html=True)
@@ -1553,12 +1677,11 @@ with col_main:
             shares = st.number_input("보유 수량 (주)", min_value=0, value=0, step=1)
 
     run_click = st.button("🚀 분석하기", key="run_analyze")
-
     run_from_side = st.session_state.get("run_from_side", False)
     run = run_click or run_from_side
     st.session_state["run_from_side"] = False
 
-    # ✅ 분석하기 눌렀을 때: 결과 유지 상태를 켜준다(핵심 패치)
+    # ✅ 핵심: run 시점에 결과 유지 파라미터를 저장해둔다 (AI 클릭 rerun에도 결과 유지)
     if run:
         st.session_state["show_result"] = True
         st.session_state["analysis_params"] = {
@@ -1571,7 +1694,7 @@ with col_main:
         }
         st.session_state["scroll_to_result"] = True
 
-    # ✅ 결과 유지: show_result가 True면 analysis_params로 다시 복원
+    # ✅ show_result가 True면, run이 False여도 결과를 계속 렌더한다
     if st.session_state.get("show_result") and st.session_state.get("analysis_params"):
         _p = st.session_state.get("analysis_params") or {}
         user_symbol = _p.get("user_symbol", user_symbol)
@@ -1582,6 +1705,7 @@ with col_main:
         shares = int(_p.get("shares", shares or 0) or 0)
         cfg = get_mode_config(mode_name)
 
+    # 스캐너
     with st.expander("🛰 신규 진입 스캐너 (간단 버전)", expanded=False):
         col_s1, col_s2 = st.columns([1, 1])
         with col_s1:
@@ -1622,7 +1746,7 @@ with col_main:
 
                     rr_txt = f"{rr:.2f}:1" if rr is not None else "N/A"
                     st.markdown(
-                        f"**{sym}** | 현재가 **{price:.2f}** | 단기흐름: {bias} | 스코어 **{score_val:.1f}** | 손익비 {rr_txt}"
+                        f"**{sym}** | 현재가(일봉 종가) **{price:.2f}** | 단기흐름: {bias} | 스코어 **{score_val:.1f}** | 손익비 {rr_txt}"
                     )
                     go = st.button(f"🔍 {sym} 바로 분석", key=f"scan_go_{sym}")
                     if go:
@@ -1633,10 +1757,11 @@ with col_main:
                     st.session_state["scroll_to_result"] = True
                     st.rerun()
 
-    # ✅ 여기서 핵심: run이 아니더라도 show_result가 없을 때만 stop
-    if (not run) and (not st.session_state.get("show_result")):
+    # ✅ run도 아니고 show_result도 아니면 결과영역 렌더 불필요
+    if not st.session_state.get("show_result"):
         st.stop()
 
+    # ---- 여기부터 결과 렌더 ----
     symbol = normalize_symbol(user_symbol)
     display_name = user_symbol.strip() if user_symbol else ""
 
@@ -1661,21 +1786,42 @@ with col_main:
         last = df.iloc[-1]
         df_5m = get_intraday_5m(symbol)
 
+    # 최근/즐겨찾기
     if symbol not in st.session_state["recent_symbols"]:
         st.session_state["recent_symbols"].append(symbol)
         st.session_state["recent_symbols"] = st.session_state["recent_symbols"][-30:]
 
-    price = float(last["Close"])
-    profit_pct = (price - avg_price) / avg_price * 100 if avg_price > 0 else 0.0
-    total_pnl = (price - avg_price) * shares if (shares > 0 and avg_price > 0) else 0.0
+    # 가격: 레벨은 일봉, 상태는 시외 포함 최근가
+    price_close = float(last["Close"])
+    ext_price = get_last_extended_price(symbol)
+    price_now = float(ext_price) if ext_price is not None else price_close
+
+    profit_pct = (price_now - avg_price) / avg_price * 100 if avg_price > 0 else 0.0
+    total_pnl = (price_now - avg_price) * shares if (shares > 0 and avg_price > 0) else 0.0
 
     buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, cfg)
 
+    # 신규 진입: 손절은 진입밴드 기반으로 약간 더 타이트
     if holding_type == "신규 진입 검토" and buy_low is not None:
         sl0 = buy_low * 0.97
         sl1 = buy_low * 0.94
 
-    rr = calc_rr_ratio(price, tp1, sl0)
+    levels_dict = {
+        "buy_low": buy_low, "buy_high": buy_high,
+        "tp0": tp0, "tp1": tp1, "tp2": tp2,
+        "sl0": sl0, "sl1": sl1,
+    }
+
+    # ✅ 상태 머신으로 현재 상태/행동지침 결정
+    state_name, action_text, recover_level, phase = compute_state_and_action(
+        holding_type=holding_type,
+        price_now=price_now,
+        avg_price=avg_price,
+        levels=levels_dict,
+        last_row=last,
+    )
+
+    rr = calc_rr_ratio(price_now, tp1, sl0)
 
     bias_comment = short_term_bias(last)
     gap_pct, gap_comment = calc_gap_info(df)
@@ -1689,8 +1835,6 @@ with col_main:
     score_mkt, _, _ = compute_market_score(ov)
     alerts = build_risk_alerts(score_mkt, last, gap_pct, atr14, price_move_abs)
 
-    ext_price = get_last_extended_price(symbol)
-
     is_fav = symbol in st.session_state["favorite_symbols"]
     fav_new = st.checkbox("⭐ 이 종목 즐겨찾기", value=is_fav)
     if fav_new and not is_fav:
@@ -1698,9 +1842,7 @@ with col_main:
     elif (not fav_new) and is_fav:
         st.session_state["favorite_symbols"].remove(symbol)
 
-    eff_avg_price = avg_price if holding_type == "보유 중" else 0.0
-    signal = make_signal(last, eff_avg_price, cfg, fgi, main_tp=tp1, main_sl=sl0, buy_low=buy_low, buy_high=buy_high)
-
+    # 스크롤(분석하기 눌렀을 때만)
     st.markdown('<div id="analysis_result_anchor"></div>', unsafe_allow_html=True)
     if st.session_state.get("scroll_to_result", False):
         st.markdown(
@@ -1724,7 +1866,7 @@ with col_main:
             st.success("결과를 닫았습니다.")
             st.rerun()
     with col_close2:
-        st.caption("※ 결과는 닫기 전까지 화면에 유지됩니다.")
+        st.caption("※ 결과는 닫기 전까지 화면에 유지됩니다. (AI 버튼 눌러도 안 닫힘)")
 
     st.subheader("🧾 요약")
     st.write(f"- 입력 종목: **{display_name}** → 실제 티커: **{symbol}**")
@@ -1735,11 +1877,12 @@ with col_main:
 
     col_a, col_b, col_c = st.columns(3)
     with col_a:
-        st.metric("정규장 기준 현재가", f"{price:.2f} USD")
+        st.metric("일봉 종가(레벨 계산 기준)", f"{price_close:.2f} USD")
+        st.metric("현재가(시외 포함, 상태 전환 기준)", f"{price_now:.2f} USD")
         if ext_price is not None:
-            diff_pct = (ext_price - price) / price * 100
+            diff_pct = (price_now - price_close) / price_close * 100
             sign = "+" if diff_pct >= 0 else ""
-            st.caption(f"시외 포함 최근가: {ext_price:.2f} ({sign}{diff_pct:.2f}%)")
+            st.caption(f"시외 포함 변화: {sign}{diff_pct:.2f}%")
 
     with col_b:
         st.markdown(
@@ -1747,7 +1890,7 @@ with col_main:
             <div class="card-soft-sm">
               <div class="small-muted">MODE</div>
               <div style="font-size:1.05rem;font-weight:600;">{cfg['name']} 모드</div>
-              <div class="small-muted">차트 기간: {cfg['period']} · 손절/익절: 추세·지지/저항 기반</div>
+              <div class="small-muted">레벨 계산: 일봉(스윙) · 상태 전환: 현재가(시외 포함)</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1757,9 +1900,9 @@ with col_main:
         st.markdown(
             f"""
             <div class="card-soft-sm">
-              <div class="small-muted">POSITION</div>
+              <div class="small-muted">STATUS</div>
               <div>보유 상태: <b>{holding_type}</b></div>
-              <div class="small-muted">보유중이면 평단/수익률 계산, 신규진입이면 진입/손절 가정 표시</div>
+              <div class="small-muted">현재 상태: <b>{state_name}</b></div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1767,7 +1910,7 @@ with col_main:
 
     if holding_type == "보유 중" and avg_price > 0:
         st.write(f"- 평단가: **{avg_price:.2f} USD**")
-        st.write(f"- 수익률: **{profit_pct:.2f}%**")
+        st.write(f"- (현재가 기준) 수익률: **{profit_pct:.2f}%**")
 
     if holding_type == "보유 중" and shares > 0 and avg_price > 0:
         rate = get_usdkrw_rate()
@@ -1782,8 +1925,12 @@ with col_main:
     st.subheader("🎯 매매 판단 (핵심)")
     col_sig1, col_sig2 = st.columns([2, 1])
     with col_sig1:
-        st.write(f"**추천 액션:** ⭐ {signal} ⭐")
-        st.write(f"**단기 방향성:** {bias_comment}")
+        st.write(f"**현재 상태:** ✅ {state_name}")
+        st.write(f"**행동지침:** ⭐ {action_text} ⭐")
+        st.write(f"**단기 흐름(일봉 기준):** {bias_comment}")
+        if recover_level is not None and "진입 실패" in state_name:
+            st.caption(f"🔁 회복 확인가(재평가 기준): {recover_level:.2f} 위 복귀")
+
     with col_sig2:
         if rr is not None:
             st.metric("손익비 (TP=1차 목표 / SL=0차 손절)", f"{rr:.2f} : 1")
@@ -1792,34 +1939,31 @@ with col_main:
             elif rr <= 1.0:
                 st.caption("⚠ 손익비 불리 (손절폭이 상대적으로 큼)")
         else:
-            st.caption("손익비 계산 불가 (TP/SL이 애매한 위치)")
+            st.caption("손익비 계산 불가 (현재가/TP/SL 위치상 비정상 또는 애매)")
 
-    st.subheader("📌 가격 레벨 (진입/익절/손절 가이드)")
-
+    st.subheader("📌 가격 레벨 (일봉 기반 가이드)")
     if holding_type == "보유 중":
         if buy_low is not None and buy_high is not None:
-            st.write(f"- 추가매수 관심 구간(추세 유지시): **{buy_low:.2f} ~ {buy_high:.2f} USD**")
+            st.write(f"- 눌림 매수/유지 관심 구간: **{buy_low:.2f} ~ {buy_high:.2f} USD**")
         if tp0 is not None:
-            st.write(f"- 0차 매도(부분 익절) 추천가: **{tp0:.2f} USD**")
+            st.write(f"- 0차 익절(부분): **{tp0:.2f} USD**")
         if tp1 is not None:
-            st.write(f"- 1차 매도(주요 저항/목표): **{tp1:.2f} USD**")
+            st.write(f"- 1차 목표(주요 저항): **{tp1:.2f} USD**")
         if tp2 is not None:
-            st.write(f"- 2차 매도(확장 목표/과열 구간): **{tp2:.2f} USD**")
+            st.write(f"- 2차 목표(확장): **{tp2:.2f} USD**")
         if sl0 is not None:
-            st.write(f"- 0차 손절가(추세 이탈 기준): **{sl0:.2f} USD**")
-        if sl1 is not None:
-            st.write(f"- 1차 손절가(최종 방어선): **{sl1:.2f} USD**")
-    else:
-        if buy_low is not None and buy_high is not None:
-            entry1 = min(buy_high, buy_low * 1.03)
-            entry2 = buy_low
-            st.write(f"- 1차 진입(소량 매수) 추천가: **{entry1:.2f} USD** 근처")
-            st.write(f"- 2차 분할매수(조정 시): **{entry2:.2f} USD** 이하 구간")
-            st.caption("※ 신규 진입은 1·2차 분할 진입 기준입니다.")
-        if sl0 is not None:
-            st.write(f"- 기본 손절(매수 가설 실패): **{sl0:.2f} USD**")
+            st.write(f"- 0차 방어선: **{sl0:.2f} USD**")
         if sl1 is not None:
             st.write(f"- 최종 방어선: **{sl1:.2f} USD**")
+    else:
+        if buy_low is not None and buy_high is not None:
+            st.write(f"- 1차 시작(분할): **{buy_low:.2f} ~ {buy_high:.2f} USD**")
+        if sl0 is not None:
+            st.write(f"- 진입 실패(중단 기준): **{sl0:.2f} USD**")
+        if sl1 is not None:
+            st.write(f"- 최종 방어선: **{sl1:.2f} USD**")
+        if recover_level is not None:
+            st.write(f"- 회복 확인가(재진입 재평가): **{recover_level:.2f} USD**")
 
     st.subheader("📊 갭 · 변동성 · 장중 흐름")
     col_gap, col_atr, col_intra = st.columns(3)
@@ -1835,7 +1979,7 @@ with col_main:
             st.metric("ATR(14, 일봉)", f"{atr14:.2f}")
             if price_move_abs is not None and atr14 > 0:
                 ratio = price_move_abs / atr14
-                st.caption(f"오늘 캔들 몸통 크기: ATR의 {ratio:.2f}배")
+                st.caption(f"오늘 일봉 몸통 크기: ATR의 {ratio:.2f}배")
         else:
             st.caption("ATR 계산 불가(데이터 부족)")
 
@@ -1871,47 +2015,45 @@ with col_main:
         st.write(a)
 
     # =====================================
-    # 🤖 AI 해석 (요약 + 헷갈림 설명)
+    # 🤖 AI 해석 (상태 머신 + 현재가 기준 행동지침 반영)
     # =====================================
     st.subheader("🤖 AI 해석")
-    st.caption("※ AI는 '확정 매수/매도 지시'가 아니라, 가격 기준의 '조건부 행동지침'을 제공합니다.")
+    st.caption("※ AI는 '확정 매수/매도 지시'가 아니라, 현재가 기준의 '조건부 행동지침'만 제공합니다.")
 
     try:
-        cache_key = _ai_make_cache_key(symbol, holding_type, mode_name, avg_price, last, label_mkt)
+        cache_key = _ai_make_cache_key(symbol, holding_type, mode_name, avg_price, last, label_mkt, state_name, price_now)
     except Exception:
         cache_key = None
 
     cached = (cache_key is not None and cache_key in st.session_state.get("ai_cache", {}))
     btn_label = "🔁 AI 해석 다시 생성" if cached else "✨ AI 해석 보기"
 
-    st.button(
-        btn_label,
-        key=f"ai_btn_{symbol}_{holding_type}_{mode_name}",
-        on_click=request_ai_generation,
-    )
+    if cache_key is not None:
+        st.button(
+            btn_label,
+            key=f"ai_btn_{cache_key}",
+            on_click=request_ai_generation,
+            args=(cache_key,),
+        )
+    else:
+        st.info("AI 캐시 키 생성 실패(데이터 부족).")
 
-    if st.session_state.get("ai_request", False):
-        # ✅ 리런 중 반복 실행 방지: 먼저 False로 내리고 실행
+    # ✅ AI 요청이 현재 캐시키와 일치할 때만 1회 생성 (다른 종목 눌렀을 때 계속 도는 문제 방지)
+    if st.session_state.get("ai_request", False) and st.session_state.get("ai_request_key") == cache_key:
         st.session_state["ai_request"] = False
-
-        levels_dict = {
-            "buy_low": buy_low, "buy_high": buy_high,
-            "tp0": tp0, "tp1": tp1, "tp2": tp2,
-            "sl0": sl0, "sl1": sl1,
-        }
+        st.session_state["ai_request_key"] = None
 
         extra_notes = [
             f"시장점수: {score_mkt} / label: {label_mkt}",
-            f"신호: {signal}",
-            f"단기흐름: {bias_comment}",
+            f"현재상태: {state_name}",
+            f"행동지침: {action_text}",
+            f"단기흐름(일봉): {bias_comment}",
             f"갭: {gap_comment}",
         ]
         if rr is not None:
             extra_notes.append(f"손익비(RR): {rr:.2f}:1")
         if holding_type == "보유 중" and avg_price > 0:
-            extra_notes.append(f"평단 대비: {(price/avg_price-1)*100:+.2f}%")
-        if gap_pct is not None:
-            extra_notes.append(f"갭%: {gap_pct:+.2f}%")
+            extra_notes.append(f"평단 대비(현재가): {(price_now/avg_price-1)*100:+.2f}%")
         if atr14 is not None:
             extra_notes.append(f"ATR14: {atr14:.2f}")
 
@@ -1923,17 +2065,20 @@ with col_main:
                 mode_name=mode_name,
                 market_label=label_mkt,
                 market_detail=detail_mkt,
-                price=price,
+                live_price=price_now,
+                day_close=price_close,
                 avg_price=avg_price,
-                signal=signal,
+                state_name=state_name,
+                action_text=action_text,
                 bias_comment=bias_comment,
                 gap_comment=gap_comment,
                 rr=rr,
-                levels=levels_dict,
+                levels=levels_dict | {"recover": recover_level},
                 last_row=last,
                 extra_notes=extra_notes,
                 model_name=ai_model_name,
             )
+
         if parsed:
             if cache_key:
                 st.session_state["ai_cache"][cache_key] = parsed
@@ -1943,7 +2088,7 @@ with col_main:
 
     ai_out = None
     if cache_key and cache_key in st.session_state.get("ai_cache", {}):
-        ai_out = st.session_state.get("ai_cache")[cache_key]
+        ai_out = st.session_state["ai_cache"][cache_key]
 
     if ai_out is not None:
         one = str(ai_out.get("summary_one_line", "")).strip()
@@ -1977,8 +2122,8 @@ with col_main:
                         unsafe_allow_html=True,
                     )
     else:
-        st.info("AI 해석은 버튼을 누를 때만 생성됩니다. (Streamlit Secrets에 OPENAI_API_KEY가 있어야 합니다.)")
+        st.info("AI 해석은 버튼을 누를 때만 생성됩니다. (Streamlit Secrets에 OPENAI_API_KEY 필요)")
 
-    st.subheader("📈 가격/볼린저밴드 차트 (단순 표시)")
+    st.subheader("📈 가격/볼린저밴드 차트 (일봉 기반)")
     chart_df = df[["Close", "MA20", "BBL", "BBU"]].tail(120)
     st.line_chart(chart_df)
