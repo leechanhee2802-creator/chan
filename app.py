@@ -417,6 +417,14 @@ def get_us_market_overview():
         "dxy_state": dxy_state,
     }
 
+    # [추가] 지수(확정)용: 나스닥/ S&P 지수 변화(정규장 기준)
+    ixic_last, ixic_chg, ixic_state = safe_last_change_info("^IXIC")
+    gspc_last, gspc_chg, gspc_state = safe_last_change_info("^GSPC")
+    overview["indexes"] = {
+        "nasdaq": {"last": ixic_last, "chg_pct": ixic_chg, "state": ixic_state},
+        "sp500": {"last": gspc_last, "chg_pct": gspc_chg, "state": gspc_state},
+    }
+
     etfs = [
         get_etf_price_with_prepost("QQQ", "QQQ (나스닥100 ETF)"),
         get_etf_price_with_prepost("VOO", "VOO (S&P500 ETF)"),
@@ -515,6 +523,161 @@ def compute_market_score(overview: dict):
         label = "🧨 강한 Risk-off (공포장 가능성)"
 
     return score, label, " · ".join(details)
+
+# =========================================================
+# [추가] 시장 판독 한 줄 결론(점수 → 문구 고정) + 장 상태 배지
+# =========================================================
+def _clamp(x, lo=0.0, hi=100.0):
+    try:
+        x = float(x)
+    except Exception:
+        return lo
+    return max(lo, min(hi, x))
+
+def score_to_text(score_0_100: float) -> str:
+    s = float(score_0_100)
+    if s >= 70:
+        return "위험선호 우세"
+    elif s >= 65:
+        return "양호"
+    elif s >= 52:
+        return "반등 시도"
+    elif s >= 45:
+        return "추세 불안"
+    else:
+        return "위험회피 우세"
+
+def market_state_badge_from_etfs(etfs: list):
+    # ETF 3대장 중 상태가 있는 걸 우선 사용(대부분 QQQ가 잡힘)
+    stt = ""
+    if etfs:
+        for e in etfs:
+            ms = (e.get("market_state") or "").strip()
+            if ms:
+                stt = ms
+                break
+
+    # yfinance marketState 예: PRE / REGULAR / POST / CLOSED 등
+    if stt == "PRE":
+        return "🟡 프리장", "chip chip-blue"
+    if stt == "POST":
+        return "🟣 애프터장", "chip chip-blue"
+    if stt == "REGULAR":
+        return "🟢 정규장", "chip chip-green"
+
+    # 애매한 경우(빈 값/기타)
+    if stt:
+        return f"⚪ 장 상태: {stt}", "chip chip-blue"
+    return "⚪ 장 상태: 확인중", "chip chip-blue"
+
+def compute_market_verdict_scores(overview: dict):
+    """
+    반환:
+      macro_0_100 : 세계지표(=Risk-on/off 종합 점수) (compute_market_score 기반)
+      etf_0_100   : ETF 선행(프리/정규/애프터 포함)
+      index_0_100 : 지수(정규장 확정) (^IXIC, ^GSPC 기반)
+      leader_0_100: 빅테크 리더십 (BIGTECH 점수 기반)
+      conclusion  : 신규진입 결론
+      holder_line : 보유자 대응 한 줄
+      lines       : 판독 4줄(문구 고정)
+    """
+    if not overview:
+        return None
+
+    # 1) macro: 기존 compute_market_score(-8~8)를 0~100으로 맵핑
+    mkt_score, _, _ = compute_market_score(overview)
+    macro_0_100 = _clamp((mkt_score + 8) / 16 * 100)
+
+    # 2) ETF 선행: ETF 3대장 평균 변화율(전일종가 대비)을 0~100으로 맵핑
+    etfs = overview.get("etfs", []) or []
+    etf_chgs = [e.get("chg_pct") for e in etfs if e.get("chg_pct") is not None]
+    if etf_chgs:
+        avg_etf = float(np.mean(etf_chgs))
+        # +1%면 70, -1%면 30 정도가 되도록 스케일 (경험적)
+        etf_0_100 = _clamp(50 + avg_etf * 20)
+    else:
+        etf_0_100 = 50.0
+
+    # 3) Index 확정: ^IXIC / ^GSPC 변화율 평균으로 0~100 맵핑
+    idx = overview.get("indexes", {}) or {}
+    ixic = idx.get("nasdaq", {}) or {}
+    gspc = idx.get("sp500", {}) or {}
+    idx_chgs = [v for v in [ixic.get("chg_pct"), gspc.get("chg_pct")] if v is not None]
+    if idx_chgs:
+        avg_idx = float(np.mean(idx_chgs))
+        index_0_100 = _clamp(50 + avg_idx * 20)
+    else:
+        # 데이터가 없으면 선물로 대체(보수적)
+        fut = overview.get("futures", {}) or {}
+        nas_f = (fut.get("nasdaq", {}) or {}).get("chg_pct")
+        if nas_f is not None:
+            index_0_100 = _clamp(50 + float(nas_f) * 18)
+        else:
+            index_0_100 = 50.0
+
+    # 4) Leader: bigtech score(-7~+7)를 0~100으로 맵핑
+    bt = overview.get("bigtech", {}) or {}
+    bt_score = bt.get("score", 0)
+    n = max(1, len(BIGTECH_LIST))
+    leader_0_100 = _clamp(50 + (float(bt_score) / n) * 30)
+
+    # 문구(고정)
+    line_macro = f"세계지표: {score_to_text(macro_0_100)}"
+    # ETF는 항상 “선행(확인필요)” 느낌을 주기 위해 괄호로만 고정
+    etf_text = score_to_text(etf_0_100)
+    if etf_0_100 >= 65:
+        etf_text = f"{etf_text} (정규장 확인 필요)"
+    elif etf_0_100 < 50:
+        etf_text = f"{etf_text} (리스크 경계)"
+    else:
+        etf_text = f"{etf_text} (대기)"
+
+    line_etf = f"ETF 선행: {etf_text}"
+
+    idx_text = score_to_text(index_0_100)
+    # 지수는 “반등 시도 중이나 추세 불안” 같은 조합을 더 자주 쓰게 보정
+    if 52 <= index_0_100 < 60:
+        idx_text = "반등 시도 중이나 추세 불안"
+    elif 45 <= index_0_100 < 52:
+        idx_text = "추세 불안"
+    line_index = f"지수 점수: {idx_text}"
+
+    leader_text = score_to_text(leader_0_100)
+    # 빅테크는 “상단 부담”을 중간 구간 문구로 고정
+    if 58 <= leader_0_100 < 68:
+        leader_text = "상단 부담"
+    elif 52 <= leader_0_100 < 58:
+        leader_text = "힘 부족"
+    elif leader_0_100 < 52:
+        leader_text = "주도력 상실"
+    elif leader_0_100 >= 68:
+        leader_text = "주도력 확실"
+    line_leader = f"빅테크: {leader_text}"
+
+    # 결론(if/score) — 네가 원한 “2줄 결론” 고정
+    # 컷라인(우리가 합의한 실전용)
+    if macro_0_100 < 45:
+        conclusion = "신규진입 불리"
+        holder_line = "보유자는 방어적 대응"
+    elif (index_0_100 < 52) or (leader_0_100 < 52):
+        conclusion = "신규진입 신중"
+        holder_line = "보유자는 단기 반등까지만 대응"
+    elif (macro_0_100 >= 60) and (index_0_100 >= 60) and (leader_0_100 >= 58):
+        conclusion = "신규진입 가능"
+        holder_line = "보유자는 추세 추종 가능"
+    else:
+        conclusion = "선별적 접근"
+        holder_line = "보유자는 분할 대응"
+
+    return {
+        "macro": macro_0_100,
+        "etf": etf_0_100,
+        "index": index_0_100,
+        "leader": leader_0_100,
+        "lines": [line_macro, line_etf, line_index, line_leader],
+        "conclusion": conclusion,
+        "holder_line": holder_line,
+    }
 
 # =====================================
 # 가격 데이터 + 지표
@@ -674,8 +837,6 @@ def ai_summarize_and_explain(
         "반드시 JSON만 출력한다."
     )
 
-    
-    # 보유/신규에 따라 "헷갈림 설명"의 관점을 분리
     if holding_type == "보유 중":
         confusion_title_2 = "보유자 관점: 왜 버티기/비중조절이 애매한가"
         confusion_focus_2 = "평단·손절선(sl0/sl1)·목표가(tp1) 기준으로 '지금 유지/축소가 왜 애매한지'를 설명"
@@ -715,7 +876,6 @@ def ai_summarize_and_explain(
         text = (resp.choices[0].message.content or "").strip()
         parsed = _ai_extract_json(text)
         if parsed and isinstance(parsed.get("summary_one_line"), str) and isinstance(parsed.get("confusion_explain"), list):
-            # 최소 2개 Q/A 블록을 기대
             if len(parsed["confusion_explain"]) >= 2:
                 return parsed, None
             return None, "AI 응답이 너무 짧습니다(헷갈림 설명 블록 부족)."
@@ -724,7 +884,6 @@ def ai_summarize_and_explain(
         return None, f"AI 호출 실패: {e}"
 
 def request_ai_generation():
-    """AI 버튼 클릭 시: 결과가 사라지지 않도록 상태를 저장하고, 결과 영역으로 자동 스크롤."""
     st.session_state["ai_request"] = True
     st.session_state["scroll_to_result"] = True
 
@@ -785,19 +944,15 @@ def calc_trend_stops(df: pd.DataFrame, cfg: dict):
 
     candidates = []
 
-    # 1) 스윙 저점
     if swing_low < price:
         candidates.append(swing_low * 0.995)
 
-    # 2) MA20
     if ma20 < price:
         candidates.append(ma20 * 0.99)
 
-    # 5) 박스 하단
     if box_low < price:
         candidates.append(box_low * 0.995)
 
-    # 6) ATR
     if atr is not None and atr > 0:
         atr_stop = price - cfg["atr_mult"] * atr
         if atr_stop < price:
@@ -858,7 +1013,6 @@ def make_signal(row, avg_price, cfg, fgi=None, main_tp=None, main_sl=None):
     mild_overbought = (price > ma20 and (k > 70 or rsi > 60))
     strong_oversold = (price < bbl and k < 20 and d < 20 and rsi < 35)
 
-    # 신규 진입
     if avg_price <= 0:
         if fear and price < bbl * 1.02 and k < 30 and rsi < 45:
             return "초기 매수 관심 (공포 국면)"
@@ -869,7 +1023,6 @@ def make_signal(row, avg_price, cfg, fgi=None, main_tp=None, main_sl=None):
         else:
             return "관망 (신규 진입 관점)"
 
-    # 보유 관점
     trend_up = (price > ma20 and macd > macds and rsi >= 45)
     broken_trend = (main_sl is not None and price < main_sl * 0.995)
     near_tp_zone = (main_tp is not None and price >= main_tp * 0.95)
@@ -1069,11 +1222,9 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
         if buy_low is None or buy_high is None or tp1 is None:
             continue
 
-        # 매수 밴드 중심과 거리
         band_center = (buy_low + buy_high) / 2
         dist_band_pct = abs(price - band_center) / price * 100
 
-        # 조건: 밴드 근처 + RSI 과열 제외
         if price < buy_low * 0.97 or price > buy_high * 1.05:
             continue
         if rsi > 65:
@@ -1089,9 +1240,7 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
         score += max(0, 3 - dist_band_pct)
         score += max(0, 2 - abs(rsi - 50) / 10)
 
-        # 신규진입 손절 가정(매수 가설 실패 기준)
         sl0_new = buy_low * 0.97
-
         rr = calc_rr_ratio(price, tp1, sl0_new)
 
         results.append({
@@ -1140,7 +1289,6 @@ if "ai_cache" not in st.session_state:
 if "ai_request" not in st.session_state:
     st.session_state["ai_request"] = False
 
-# 스캐너/즐겨찾기에서 '바로 분석' 눌렀을 때 반영
 if st.session_state.get("pending_symbol"):
     ps = st.session_state["pending_symbol"]
     st.session_state["symbol_input"] = ps
@@ -1238,6 +1386,45 @@ with col_main:
             st.markdown(f'<div class="small-muted">{label_mkt}</div>', unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
             st.caption("※ 범위: -8 ~ 8 | 선물·금리·달러·ETF 기준 종합")
+
+        # [추가] 장 상태 배지 + 시장 판독 한 줄 결론(점수→문구 고정)
+        verdict = compute_market_verdict_scores(ov)
+        session_badge, session_cls = market_state_badge_from_etfs(etfs)
+
+        if verdict:
+            st.markdown(
+                f"""
+                <div class="card-soft">
+                  <div class="layer-title-en">MARKET VERDICT</div>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+                    <span class="{session_cls}">{session_badge}</span>
+                    <span class="chip chip-blue">Macro {verdict['macro']:.0f}</span>
+                    <span class="chip chip-blue">ETF {verdict['etf']:.0f}</span>
+                    <span class="chip chip-blue">Index {verdict['index']:.0f}</span>
+                    <span class="chip chip-blue">BigTech {verdict['leader']:.0f}</span>
+                  </div>
+
+                  <div style="line-height:1.55;">
+                    <div>🔍 현재 시장 판독</div>
+                    <div class="small-muted" style="margin-top:6px;">
+                      • {verdict['lines'][0]}<br/>
+                      • {verdict['lines'][1]}<br/>
+                      • {verdict['lines'][2]}<br/>
+                      • {verdict['lines'][3]}
+                    </div>
+                  </div>
+
+                  <div style="margin-top:10px;">
+                    <div style="font-weight:700;">📌 결론</div>
+                    <div style="margin-top:4px;">
+                      → {verdict['conclusion']}<br/>
+                      → {verdict['holder_line']}
+                    </div>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
         if detail_mkt:
             st.caption("· " + detail_mkt)
@@ -1379,7 +1566,6 @@ with col_main:
         with col_mid2:
             shares = st.number_input("보유 수량 (주)", min_value=0, value=0, step=1)
 
-    # 분석하기
     run_click = st.button("🚀 분석하기", key="run_analyze")
 
     run_from_side = st.session_state.get("run_from_side", False)
@@ -1387,7 +1573,6 @@ with col_main:
     st.session_state["run_from_side"] = False
 
     if st.session_state.get("show_result") and st.session_state.get("analysis_params"):
-        # 저장된 파라미터로 항상 같은 결과가 화면에 남도록 렌더링 (버튼 눌러도 사라지지 않게)
         _p = st.session_state.get("analysis_params") or {}
         user_symbol = _p.get("user_symbol", user_symbol)
         holding_type = _p.get("holding_type", holding_type)
@@ -1407,7 +1592,6 @@ with col_main:
             "shares": shares,
         }
 
-    # ========== 스캐너 (번잡함 방지: Expander + 닫기 버튼) ==========
     with st.expander("🛰 신규 진입 스캐너 (간단 버전)", expanded=False):
         col_s1, col_s2 = st.columns([1, 1])
         with col_s1:
@@ -1459,13 +1643,9 @@ with col_main:
                     st.session_state["scroll_to_result"] = True
                     st.rerun()
 
-    # 분석 실행 안했으면 종료
     if not run:
         st.stop()
 
-    # ==========================
-    # 실제 분석 로직
-    # ==========================
     symbol = normalize_symbol(user_symbol)
     display_name = user_symbol.strip() if user_symbol else ""
 
@@ -1490,7 +1670,6 @@ with col_main:
         last = df.iloc[-1]
         df_5m = get_intraday_5m(symbol)
 
-    # 최근 종목 기록
     if symbol not in st.session_state["recent_symbols"]:
         st.session_state["recent_symbols"].append(symbol)
         st.session_state["recent_symbols"] = st.session_state["recent_symbols"][-30:]
@@ -1501,12 +1680,10 @@ with col_main:
 
     buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, cfg)
 
-    # 신규 진입이면 손절 로직을 “매수 가설 실패” 기준으로 재정의
     if holding_type == "신규 진입 검토" and buy_low is not None:
         sl0 = buy_low * 0.97
         sl1 = buy_low * 0.94
 
-    # 손익비(기술적 TP/SL)
     rr = calc_rr_ratio(price, tp1, sl0)
 
     bias_comment = short_term_bias(last)
@@ -1523,7 +1700,6 @@ with col_main:
 
     ext_price = get_last_extended_price(symbol)
 
-    # 즐겨찾기
     is_fav = symbol in st.session_state["favorite_symbols"]
     fav_new = st.checkbox("⭐ 이 종목 즐겨찾기", value=is_fav)
     if fav_new and not is_fav:
@@ -1531,13 +1707,9 @@ with col_main:
     elif (not fav_new) and is_fav:
         st.session_state["favorite_symbols"].remove(symbol)
 
-    # 추천 액션
     eff_avg_price = avg_price if holding_type == "보유 중" else 0.0
     signal = make_signal(last, eff_avg_price, cfg, fgi, main_tp=tp1, main_sl=sl0)
 
-    # ==========================
-    # 결과 출력 + 자동 스크롤
-    # ==========================
     st.markdown('<div id="analysis_result_anchor"></div>', unsafe_allow_html=True)
     if st.session_state.get("scroll_to_result", False):
         st.markdown(
@@ -1553,7 +1725,6 @@ with col_main:
         )
         st.session_state["scroll_to_result"] = False
 
-    # 결과 닫기(화면에서 숨김)
     col_close1, col_close2 = st.columns([1, 6])
     with col_close1:
         if st.button("🧹 결과 닫기", key="close_result"):
@@ -1708,123 +1879,114 @@ with col_main:
     for a in alerts:
         st.write(a)
 
-    
-        # =====================================
-        # 🤖 AI 해석 (요약 + 헷갈림 설명)
-        # =====================================
-        st.subheader("🤖 AI 해석")
-        st.caption("※ AI는 '확정 매수/매도 지시'가 아니라, 현재 신호가 왜 그렇게 보이는지(해석/설명)만 제공합니다.")
+    # =====================================
+    # 🤖 AI 해석 (요약 + 헷갈림 설명)  (기존 그대로)
+    # =====================================
+    st.subheader("🤖 AI 해석")
+    st.caption("※ AI는 '확정 매수/매도 지시'가 아니라, 현재 신호가 왜 그렇게 보이는지(해석/설명)만 제공합니다.")
 
-        try:
-            cache_key = _ai_make_cache_key(symbol, holding_type, mode_name, avg_price, last, label_mkt)
-        except Exception:
-            cache_key = None
+    try:
+        cache_key = _ai_make_cache_key(symbol, holding_type, mode_name, avg_price, last, label_mkt)
+    except Exception:
+        cache_key = None
 
-        cached = (cache_key is not None and cache_key in st.session_state.get("ai_cache", {}))
+    cached = (cache_key is not None and cache_key in st.session_state.get("ai_cache", {}))
+    btn_label = "🔁 AI 해석 다시 생성" if cached else "✨ AI 해석 보기"
 
-        btn_label = "🔁 AI 해석 다시 생성" if cached else "✨ AI 해석 보기"
+    st.button(
+        btn_label,
+        key=f"ai_btn_{symbol}_{holding_type}_{mode_name}",
+        on_click=request_ai_generation,
+    )
 
-        # 버튼 클릭 시 rerun되면서 화면이 맨 위로 올라가는 문제를 막기 위해:
-        # 1) 클릭 상태를 session_state에 저장
-        # 2) 결과 앵커로 자동 스크롤
-        st.button(
-            btn_label,
-            key=f"ai_btn_{symbol}_{holding_type}_{mode_name}",
-            on_click=request_ai_generation,
-        )
+    if st.session_state.get("ai_request", False):
+        st.session_state["ai_request"] = False
 
-        # 버튼을 눌렀을 때만 실제 AI 호출 (session_state 기반)
-        if st.session_state.get("ai_request", False):
-            st.session_state["ai_request"] = False  # 중복 호출 방지(바로 해제)
+        levels_dict = {
+            "buy_low": buy_low, "buy_high": buy_high,
+            "tp0": tp0, "tp1": tp1, "tp2": tp2,
+            "sl0": sl0, "sl1": sl1,
+        }
 
-            levels_dict = {
-                "buy_low": buy_low, "buy_high": buy_high,
-                "tp0": tp0, "tp1": tp1, "tp2": tp2,
-                "sl0": sl0, "sl1": sl1,
-            }
+        extra_notes = [
+            f"시장점수: {score_mkt} / label: {label_mkt}",
+            f"신호: {signal}",
+            f"단기흐름: {bias_comment}",
+            f"갭: {gap_comment}",
+        ]
+        if rr is not None:
+            extra_notes.append(f"손익비(RR): {rr:.2f}:1")
+        if holding_type == "보유 중" and avg_price > 0:
+            extra_notes.append(f"평단 대비: {(price/avg_price-1)*100:+.2f}%")
+        if gap_pct is not None:
+            extra_notes.append(f"갭%: {gap_pct:+.2f}%")
+        if atr14 is not None:
+            extra_notes.append(f"ATR14: {atr14:.2f}")
 
-            # 보유/신규에 따라 '헷갈림' 포인트를 다르게 구성 (프롬프트에서 분기)
-            extra_notes = [
-                f"시장점수: {score_mkt} / label: {label_mkt}",
-                f"신호: {signal}",
-                f"단기흐름: {bias_comment}",
-                f"갭: {gap_comment}",
-            ]
-            if rr is not None:
-                extra_notes.append(f"손익비(RR): {rr:.2f}:1")
-            if holding_type == "보유 중" and avg_price > 0:
-                extra_notes.append(f"평단 대비: {(price/avg_price-1)*100:+.2f}%")
-            if gap_pct is not None:
-                extra_notes.append(f"갭%: {gap_pct:+.2f}%")
-            if atr14 is not None:
-                extra_notes.append(f"ATR14: {atr14:.2f}")
-
-            with st.spinner("AI 해석 생성 중..."):
-                ai_model_name = st.session_state.get("ai_model_name", "gpt-4o-mini")
-                parsed, err = ai_summarize_and_explain(
-                    symbol=symbol,
-                    holding_type=holding_type,
-                    mode_name=mode_name,
-                    market_label=label_mkt,
-                    market_detail=detail_mkt,
-                    price=price,
-                    avg_price=avg_price,
-                    signal=signal,
-                    bias_comment=bias_comment,
-                    gap_comment=gap_comment,
-                    rr=rr,
-                    levels=levels_dict,
-                    last_row=last,
-                    extra_notes=extra_notes,
-                    model_name=ai_model_name,
-                )
-            if parsed:
-                if cache_key:
-                    st.session_state["ai_cache"][cache_key] = parsed
-                st.success("AI 해석 생성 완료!")
-            else:
-                st.error(err or "AI 생성 실패")
-
-        # === AI 출력(카드형) ===
-        ai_out = None
-        if cache_key and cache_key in st.session_state.get("ai_cache", {}):
-            ai_out = st.session_state["ai_cache"][cache_key]
-
-        if ai_out is not None:
-            one = str(ai_out.get("summary_one_line", "")).strip()
-            blocks = ai_out.get("confusion_explain", [])
-
-            if one:
-                st.markdown(
-                    f"""
-                    <div class="card-soft">
-                      <div class="layer-title-en">AI SUMMARY</div>
-                      <div style="font-size:1.05rem;font-weight:700;line-height:1.35;">{one}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            if isinstance(blocks, list) and blocks:
-                # 최대 2개만 노출 (번잡 방지)
-                blocks = blocks[:2]
-                cols = st.columns(len(blocks))
-                for i, b in enumerate(blocks):
-                    title = str(b.get("title", "")).strip()
-                    desc = str(b.get("desc", "")).strip()
-                    with cols[i]:
-                        st.markdown(
-                            f"""
-                            <div class="card-soft-sm">
-                              <div style="font-weight:700;margin-bottom:6px;">{title}</div>
-                              <div class="small-muted" style="line-height:1.45;">{desc}</div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
+        with st.spinner("AI 해석 생성 중..."):
+            ai_model_name = st.session_state.get("ai_model_name", "gpt-4o-mini")
+            parsed, err = ai_summarize_and_explain(
+                symbol=symbol,
+                holding_type=holding_type,
+                mode_name=mode_name,
+                market_label=label_mkt,
+                market_detail=detail_mkt,
+                price=price,
+                avg_price=avg_price,
+                signal=signal,
+                bias_comment=bias_comment,
+                gap_comment=gap_comment,
+                rr=rr,
+                levels=levels_dict,
+                last_row=last,
+                extra_notes=extra_notes,
+                model_name=ai_model_name,
+            )
+        if parsed:
+            if cache_key:
+                st.session_state["ai_cache"][cache_key] = parsed
+            st.success("AI 해석 생성 완료!")
         else:
-            st.info("AI 해석은 버튼을 누를 때만 생성됩니다. (Streamlit Secrets에 OPENAI_API_KEY가 있어야 합니다.)")
+            st.error(err or "AI 생성 실패")
 
-        st.subheader("📈 가격/볼린저밴드 차트 (단순 표시)")
-        chart_df = df[["Close", "MA20", "BBL", "BBU"]].tail(120)
-        st.line_chart(chart_df)
+    ai_out = None
+    if cache_key and cache_key in st.session_state.get("ai_cache", {}):
+        ai_out = st.session_state["ai_cache"][cache_key]
+
+    if ai_out is not None:
+        one = str(ai_out.get("summary_one_line", "")).strip()
+        blocks = ai_out.get("confusion_explain", [])
+
+        if one:
+            st.markdown(
+                f"""
+                <div class="card-soft">
+                  <div class="layer-title-en">AI SUMMARY</div>
+                  <div style="font-size:1.05rem;font-weight:700;line-height:1.35;">{one}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        if isinstance(blocks, list) and blocks:
+            blocks = blocks[:2]
+            cols = st.columns(len(blocks))
+            for i, b in enumerate(blocks):
+                title = str(b.get("title", "")).strip()
+                desc = str(b.get("desc", "")).strip()
+                with cols[i]:
+                    st.markdown(
+                        f"""
+                        <div class="card-soft-sm">
+                          <div style="font-weight:700;margin-bottom:6px;">{title}</div>
+                          <div class="small-muted" style="line-height:1.45;">{desc}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+    else:
+        st.info("AI 해석은 버튼을 누를 때만 생성됩니다. (Streamlit Secrets에 OPENAI_API_KEY가 있어야 합니다.)")
+
+    st.subheader("📈 가격/볼린저밴드 차트 (단순 표시)")
+    chart_df = df[["Close", "MA20", "BBL", "BBU"]].tail(120)
+    st.line_chart(chart_df)
