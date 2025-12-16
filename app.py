@@ -417,7 +417,6 @@ def get_us_market_overview():
         "dxy_state": dxy_state,
     }
 
-    # [추가] 지수(확정)용: 나스닥/ S&P 지수 변화(정규장 기준)
     ixic_last, ixic_chg, ixic_state = safe_last_change_info("^IXIC")
     gspc_last, gspc_chg, gspc_state = safe_last_change_info("^GSPC")
     overview["indexes"] = {
@@ -548,7 +547,6 @@ def score_to_text(score_0_100: float) -> str:
         return "위험회피 우세"
 
 def market_state_badge_from_etfs(etfs: list):
-    # ETF 3대장 중 상태가 있는 걸 우선 사용(대부분 QQQ가 잡힘)
     stt = ""
     if etfs:
         for e in etfs:
@@ -557,7 +555,6 @@ def market_state_badge_from_etfs(etfs: list):
                 stt = ms
                 break
 
-    # yfinance marketState 예: PRE / REGULAR / POST / CLOSED 등
     if stt == "PRE":
         return "🟡 프리장", "chip chip-blue"
     if stt == "POST":
@@ -565,40 +562,25 @@ def market_state_badge_from_etfs(etfs: list):
     if stt == "REGULAR":
         return "🟢 정규장", "chip chip-green"
 
-    # 애매한 경우(빈 값/기타)
     if stt:
         return f"⚪ 장 상태: {stt}", "chip chip-blue"
     return "⚪ 장 상태: 확인중", "chip chip-blue"
 
 def compute_market_verdict_scores(overview: dict):
-    """
-    반환:
-      macro_0_100 : 세계지표(=Risk-on/off 종합 점수) (compute_market_score 기반)
-      etf_0_100   : ETF 선행(프리/정규/애프터 포함)
-      index_0_100 : 지수(정규장 확정) (^IXIC, ^GSPC 기반)
-      leader_0_100: 빅테크 리더십 (BIGTECH 점수 기반)
-      conclusion  : 신규진입 결론
-      holder_line : 보유자 대응 한 줄
-      lines       : 판독 4줄(문구 고정)
-    """
     if not overview:
         return None
 
-    # 1) macro: 기존 compute_market_score(-8~8)를 0~100으로 맵핑
     mkt_score, _, _ = compute_market_score(overview)
     macro_0_100 = _clamp((mkt_score + 8) / 16 * 100)
 
-    # 2) ETF 선행: ETF 3대장 평균 변화율(전일종가 대비)을 0~100으로 맵핑
     etfs = overview.get("etfs", []) or []
     etf_chgs = [e.get("chg_pct") for e in etfs if e.get("chg_pct") is not None]
     if etf_chgs:
         avg_etf = float(np.mean(etf_chgs))
-        # +1%면 70, -1%면 30 정도가 되도록 스케일 (경험적)
         etf_0_100 = _clamp(50 + avg_etf * 20)
     else:
         etf_0_100 = 50.0
 
-    # 3) Index 확정: ^IXIC / ^GSPC 변화율 평균으로 0~100 맵핑
     idx = overview.get("indexes", {}) or {}
     ixic = idx.get("nasdaq", {}) or {}
     gspc = idx.get("sp500", {}) or {}
@@ -607,7 +589,6 @@ def compute_market_verdict_scores(overview: dict):
         avg_idx = float(np.mean(idx_chgs))
         index_0_100 = _clamp(50 + avg_idx * 20)
     else:
-        # 데이터가 없으면 선물로 대체(보수적)
         fut = overview.get("futures", {}) or {}
         nas_f = (fut.get("nasdaq", {}) or {}).get("chg_pct")
         if nas_f is not None:
@@ -615,15 +596,13 @@ def compute_market_verdict_scores(overview: dict):
         else:
             index_0_100 = 50.0
 
-    # 4) Leader: bigtech score(-7~+7)를 0~100으로 맵핑
     bt = overview.get("bigtech", {}) or {}
     bt_score = bt.get("score", 0)
     n = max(1, len(BIGTECH_LIST))
     leader_0_100 = _clamp(50 + (float(bt_score) / n) * 30)
 
-    # 문구(고정)
     line_macro = f"세계지표: {score_to_text(macro_0_100)}"
-    # ETF는 항상 “선행(확인필요)” 느낌을 주기 위해 괄호로만 고정
+
     etf_text = score_to_text(etf_0_100)
     if etf_0_100 >= 65:
         etf_text = f"{etf_text} (정규장 확인 필요)"
@@ -631,11 +610,9 @@ def compute_market_verdict_scores(overview: dict):
         etf_text = f"{etf_text} (리스크 경계)"
     else:
         etf_text = f"{etf_text} (대기)"
-
     line_etf = f"ETF 선행: {etf_text}"
 
     idx_text = score_to_text(index_0_100)
-    # 지수는 “반등 시도 중이나 추세 불안” 같은 조합을 더 자주 쓰게 보정
     if 52 <= index_0_100 < 60:
         idx_text = "반등 시도 중이나 추세 불안"
     elif 45 <= index_0_100 < 52:
@@ -643,7 +620,6 @@ def compute_market_verdict_scores(overview: dict):
     line_index = f"지수 점수: {idx_text}"
 
     leader_text = score_to_text(leader_0_100)
-    # 빅테크는 “상단 부담”을 중간 구간 문구로 고정
     if 58 <= leader_0_100 < 68:
         leader_text = "상단 부담"
     elif 52 <= leader_0_100 < 58:
@@ -654,8 +630,6 @@ def compute_market_verdict_scores(overview: dict):
         leader_text = "주도력 확실"
     line_leader = f"빅테크: {leader_text}"
 
-    # 결론(if/score) — 네가 원한 “2줄 결론” 고정
-    # 컷라인(우리가 합의한 실전용)
     if macro_0_100 < 45:
         conclusion = "신규진입 불리"
         holder_line = "보유자는 방어적 대응"
@@ -795,6 +769,12 @@ def ai_summarize_and_explain(
     extra_notes: list,
     model_name: str = "gpt-4o-mini",
 ):
+    """
+    ✅ 변경점(요청 반영):
+    - 딱딱한 'MA20 돌파' 같은 표현 최소화 (필요해도 '20일 평균선' 정도로 자연어)
+    - "얼마 가격에서 뭘 하면 되는지" 행동 가이드 중심
+    - 영어 남발 금지 / 직관적 한국어
+    """
     if OpenAI is None:
         return None, "openai 패키지를 찾지 못했습니다. requirements.txt에 openai를 추가했는지 확인하세요."
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
@@ -830,39 +810,51 @@ def ai_summarize_and_explain(
     }
 
     system = (
-        "너는 '주식 자동판독기'의 해석 도우미다. "
-        "확정 매수/매도 지시를 하지 말고, "
-        "지표가 말하는 바를 짧고 명확하게 정리한다. "
-        "모호하면 모호하다고 말한다. "
-        "반드시 JSON만 출력한다."
+        "너는 '주식 자동판독기'의 설명 도우미다.\n"
+        "목표: 사용자가 '지금부터 어떤 가격에서 무엇을 하면 되는지'를 직관적으로 이해하게 만드는 것.\n"
+        "규칙:\n"
+        "1) 확정 매수/매도 지시는 금지(예: '지금 당장 사라/팔아라' 금지). 대신 '조건부 행동 가이드'로 말한다.\n"
+        "2) 영어 최소화. 전문용어는 쓰더라도 '짧게 풀어서' 설명한다.\n"
+        "3) 반드시 숫자(가격 레벨)를 포함해서 행동지침을 만든다.\n"
+        "4) 반드시 JSON만 출력한다."
     )
 
+    # 행동지침을 강제하는 템플릿(기존 스키마 유지: summary_one_line + confusion_explain[2])
     if holding_type == "보유 중":
-        confusion_title_2 = "보유자 관점: 왜 버티기/비중조절이 애매한가"
-        confusion_focus_2 = "평단·손절선(sl0/sl1)·목표가(tp1) 기준으로 '지금 유지/축소가 왜 애매한지'를 설명"
+        guide_hint = (
+            "보유자 관점으로 '유지/추가/축소'를 조건부로 안내해라.\n"
+            "예: 'A가격 이상이면 유지, B가격 깨지면 축소, C가격 오면 일부 정리'처럼 3단계 행동 가이드.\n"
+            "반드시 (평단 또는 손절/목표 중 1개 이상)을 직접 언급해라."
+        )
     else:
-        confusion_title_2 = "신규 진입 관점: 왜 지금 바로 들어가기 애매한가"
-        confusion_focus_2 = "진입 밴드(buy_low~buy_high)·손절선(sl0)·확인 신호(추세/모멘텀) 기준으로 '왜 대기/확인이 필요한지'를 설명"
+        guide_hint = (
+            "신규 진입 관점으로 '대기/소량/추가'를 조건부로 안내해라.\n"
+            "예: 'A~B 구간 오면 소량 시작, C 아래는 손절/철수, D 돌파 확인되면 추가'처럼 3단계 행동 가이드.\n"
+            "반드시 (진입 구간 buy_low~buy_high)와 (손절 sl0)를 언급해라."
+        )
 
     user = (
-        "아래 데이터는 기술적 지표 기반의 요약 데이터다.\n"
+        "아래 데이터는 기술적 지표 기반 요약이다.\n"
         "반드시 아래 JSON 형태로만 출력해라(키/구조/타입 고정).\n\n"
         "{\n"
-        "  \"summary_one_line\": \"가격 위치(MA20/BB 중 1개 이상) + 모멘텀(RSI/MACD 중 1개 이상) + 행동 해석(관망/유지/축소/대기 등)을 모두 포함한 한 문장\",\n"
+        "  \"summary_one_line\": \"(현재가가 어디쯤인지) + (지금 할 행동 한 줄) + (핵심 가격 1개 이상)\",\n"
         "  \"confusion_explain\": [\n"
         "    {\n"
-        "      \"title\": \"왜 지금 이 신호가 나왔나\",\n"
-        "      \"desc\": \"반드시 MA20/BBL/BBU/RSI/MACD/ATR 중 최소 2개 이상을 직접 언급하고, buy_low~buy_high 또는 tp/sl 같은 레벨을 최소 1개 언급해 구체적으로 설명\"\n"
+        "      \"title\": \"지금은 어떤 구간인가 (가격 기준)\",\n"
+        "      \"desc\": \"반드시 가격 레벨 3개 이상을 넣어라. 예: 진입구간/손절/1차목표. 그리고 '조건부 행동'을 3줄 느낌으로 써라(번호나 줄바꿈 사용 가능).\"\n"
         "    },\n"
         "    {\n"
-        f"      \"title\": \"{confusion_title_2}\",\n"
-        f"      \"desc\": \"{confusion_focus_2}. 반드시 수치/레벨(평단 또는 buy_band/tp/sl)을 1개 이상 언급\"\n"
+        "      \"title\": \"행동 가이드 (딱딱한 용어 금지)\",\n"
+        "      \"desc\": \""
+        + guide_hint.replace("\n", " ")
+        + " 20일선/볼밴/RSI 같은 단어를 쓰면 반드시 한 번은 쉬운 말로 풀어라(예: '20일 평균선=중요한 평균 가격선'). "
+        "마지막 문장은 '지금은 ○○가 최우선' 형태로 끝내라.\"\n"
         "    }\n"
         "  ]\n"
         "}\n\n"
         "제약:\n"
         "- 추상적인 문장(\"애매함\", \"모호함\"만)으로 끝내지 마라.\n"
-        "- 확정 매수/매도 지시는 금지(\"지금 사라/팔아라\" 금지).\n"
+        "- 확정 매수/매도 지시는 금지.\n"
         "- JSON 외 텍스트 출력 금지.\n\n"
         f"DATA:\n{json.dumps(compact, ensure_ascii=False)}"
     )
@@ -871,21 +863,26 @@ def ai_summarize_and_explain(
         resp = client.chat.completions.create(
             model=model_name,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-            temperature=0.2,
+            temperature=0.25,
         )
         text = (resp.choices[0].message.content or "").strip()
         parsed = _ai_extract_json(text)
         if parsed and isinstance(parsed.get("summary_one_line"), str) and isinstance(parsed.get("confusion_explain"), list):
             if len(parsed["confusion_explain"]) >= 2:
                 return parsed, None
-            return None, "AI 응답이 너무 짧습니다(헷갈림 설명 블록 부족)."
+            return None, "AI 응답이 너무 짧습니다(설명 블록 부족)."
         return None, "AI 응답에서 JSON 파싱 실패 (모델이 형식을 어겼습니다)."
     except Exception as e:
         return None, f"AI 호출 실패: {e}"
 
+
+# ✅ 변경(1): AI 버튼 눌러도 위로 튀지 않게(스크롤 대상 변경)
 def request_ai_generation():
+    # '어떤 분석 결과'에 대한 AI 요청인지 키로 저장(무한 재실행 방지)
     st.session_state["ai_request"] = True
-    st.session_state["scroll_to_result"] = True
+    st.session_state["ai_request_for"] = st.session_state.get("active_cache_key")
+    # 분석 결과 상단으로 올리지 말고, AI 섹션으로만 부드럽게 이동
+    st.session_state["scroll_to_ai"] = True
 
 
 # =====================================
@@ -1015,33 +1012,35 @@ def make_signal(row, avg_price, cfg, fgi=None, main_tp=None, main_sl=None):
 
     if avg_price <= 0:
         if fear and price < bbl * 1.02 and k < 30 and rsi < 45:
-            return "초기 매수 관심 (공포 국면)"
+            return "초기 매수 관심 (공포 구간)"
         elif greed and price < bbl * 0.98 and k < 15 and rsi < 30:
-            return "초기 매수 관심 (탐욕 중 저점)"
+            return "초기 매수 관심 (급락 반등 시도)"
         elif strong_oversold:
-            return "초기 매수 관심"
+            return "초기 매수 관심 (과매도)"
         else:
-            return "관망 (신규 진입 관점)"
+            # ✅ 변경(3): '관망' → 세분화는 아래에서 가격 포함해 후처리
+            return "대기/확인 (신규 진입)"
 
     trend_up = (price > ma20 and macd > macds and rsi >= 45)
     broken_trend = (main_sl is not None and price < main_sl * 0.995)
     near_tp_zone = (main_tp is not None and price >= main_tp * 0.95)
 
     if broken_trend:
-        return "손절 or 비중축소 (주요 지지/추세 이탈)"
+        return "손절/축소 (주요 지지 이탈)"
 
     if main_tp is not None and price >= main_tp * 0.98 and strong_overbought:
-        return "강한 부분매도 (수익 구간 + 추세 과열)"
+        return "강한 부분정리 (과열 + 저항 접근)"
     if near_tp_zone and (mild_overbought or rsi > 70):
-        return "부분매도 (저항 부근 접근)"
+        return "부분정리 (저항 접근)"
 
     if strong_oversold and not broken_trend:
-        return "합리적 분할매수 (추세 유지 + 과매도)"
+        return "분할매수 고려 (과매도 반등)"
 
     if trend_up:
-        return "보유/추세 유지 (상방 추세 진행 중)"
+        return "유지/추세 따라가기"
 
-    return "관망 (부분청산·분할매수 모두 애매한 구간)"
+    # ✅ 변경(3): '관망' 대신
+    return "유지 관찰 (방향 애매)"
 
 def calc_levels(df, last, cfg):
     if df.empty:
@@ -1171,7 +1170,7 @@ def get_intraday_5m_score(df_5m: pd.DataFrame):
     elif score == 1:
         comment = "매수/매도 힘 균형, 뚜렷한 방향성 약함"
     else:
-        comment = "장중 매도 우위 또는 관망 권장"
+        comment = "장중 매도 우위 또는 대기 권장"
 
     return score, comment + " / " + " · ".join(details)
 
@@ -1286,8 +1285,18 @@ if "analysis_params" not in st.session_state:
     st.session_state["analysis_params"] = None
 if "ai_cache" not in st.session_state:
     st.session_state["ai_cache"] = {}
+
+# ✅ 변경(1): AI 무한 재생성/계속 돌아가는 현상 방지용 상태들
 if "ai_request" not in st.session_state:
     st.session_state["ai_request"] = False
+if "ai_request_for" not in st.session_state:
+    st.session_state["ai_request_for"] = None
+if "ai_in_progress" not in st.session_state:
+    st.session_state["ai_in_progress"] = False
+if "active_cache_key" not in st.session_state:
+    st.session_state["active_cache_key"] = None
+if "scroll_to_ai" not in st.session_state:
+    st.session_state["scroll_to_ai"] = False
 
 if st.session_state.get("pending_symbol"):
     ps = st.session_state["pending_symbol"]
@@ -1327,6 +1336,11 @@ with col_side:
                     clicked_symbol = sym
 
     if clicked_symbol:
+        # ✅ 변경(1): 다른 종목으로 이동할 때 AI 요청/진행 상태 초기화
+        st.session_state["ai_request"] = False
+        st.session_state["ai_request_for"] = None
+        st.session_state["ai_in_progress"] = False
+
         st.session_state["selected_symbol"] = clicked_symbol
         st.session_state["symbol_input"] = clicked_symbol
         st.session_state["run_from_side"] = True
@@ -1387,7 +1401,6 @@ with col_main:
             st.markdown('</div>', unsafe_allow_html=True)
             st.caption("※ 범위: -8 ~ 8 | 선물·금리·달러·ETF 기준 종합")
 
-        # [추가] 장 상태 배지 + 시장 판독 한 줄 결론(점수→문구 고정)
         verdict = compute_market_verdict_scores(ov)
         session_badge, session_cls = market_state_badge_from_etfs(etfs)
 
@@ -1486,7 +1499,6 @@ with col_main:
 
         st.markdown("---")
 
-        # BIG TECH LAYER
         bt_score = bigtech_layer.get("score", 0)
         bt_items = bigtech_layer.get("items", [])
         st.markdown('<div class="card-soft">', unsafe_allow_html=True)
@@ -1506,7 +1518,6 @@ with col_main:
             )
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # SECTOR ROTATION LAYER
         sec_score = sector_layer.get("score", 0)
         sec_items = sector_layer.get("items", [])
         st.markdown('<div class="card-soft">', unsafe_allow_html=True)
@@ -1567,6 +1578,12 @@ with col_main:
             shares = st.number_input("보유 수량 (주)", min_value=0, value=0, step=1)
 
     run_click = st.button("🚀 분석하기", key="run_analyze")
+
+    # ✅ 변경(1): 분석 새로 돌릴 때 AI 요청/진행 상태 초기화 (무한 재생성 방지)
+    if run_click:
+        st.session_state["ai_request"] = False
+        st.session_state["ai_request_for"] = None
+        st.session_state["ai_in_progress"] = False
 
     run_from_side = st.session_state.get("run_from_side", False)
     run = run_click or run_from_side
@@ -1710,6 +1727,25 @@ with col_main:
     eff_avg_price = avg_price if holding_type == "보유 중" else 0.0
     signal = make_signal(last, eff_avg_price, cfg, fgi, main_tp=tp1, main_sl=sl0)
 
+    # ✅ 변경(3): '관망' 대신 더 세분화 + (가격) 같이 보여주기
+    def _fmt(x):
+        return None if x is None else f"{float(x):.2f}"
+    bl, bh, t1, s0 = _fmt(buy_low), _fmt(buy_high), _fmt(tp1), _fmt(sl0)
+
+    if holding_type == "신규 진입 검토":
+        if "대기/확인" in signal and bl and bh and s0:
+            signal = f"대기/확인 (진입 관심 {bl}~{bh} / 이탈 시 철수 {s0})"
+        elif "초기 매수 관심" in signal and bl and bh and s0:
+            signal = f"{signal} (분할 시작 {bl}~{bh} / 기준선 {s0})"
+    else:
+        if "유지 관찰" in signal and s0 and t1:
+            signal = f"유지 관찰 (방어 {s0} / 반등 목표 {t1})"
+        elif "부분정리" in signal and t1:
+            signal = f"{signal} (1차 기준 {t1})"
+        elif "손절/축소" in signal and s0:
+            signal = f"{signal} (방어선 {s0})"
+
+    # ✅ 결과 고정 + 스크롤(기존 유지)
     st.markdown('<div id="analysis_result_anchor"></div>', unsafe_allow_html=True)
     if st.session_state.get("scroll_to_result", False):
         st.markdown(
@@ -1730,6 +1766,11 @@ with col_main:
         if st.button("🧹 결과 닫기", key="close_result"):
             st.session_state["show_result"] = False
             st.session_state["analysis_params"] = None
+            # ✅ 변경(1): 닫을 때 AI도 같이 정리
+            st.session_state["ai_request"] = False
+            st.session_state["ai_request_for"] = None
+            st.session_state["ai_in_progress"] = False
+            st.session_state["active_cache_key"] = None
             st.success("결과를 닫았습니다.")
             st.rerun()
     with col_close2:
@@ -1880,27 +1921,58 @@ with col_main:
         st.write(a)
 
     # =====================================
-    # 🤖 AI 해석 (요약 + 헷갈림 설명)  (기존 그대로)
+    # 🤖 AI 해석 (요약 + 행동지침)  (요청 반영)
     # =====================================
     st.subheader("🤖 AI 해석")
-    st.caption("※ AI는 '확정 매수/매도 지시'가 아니라, 현재 신호가 왜 그렇게 보이는지(해석/설명)만 제공합니다.")
+    st.caption("※ AI는 '확정 지시'가 아니라, 가격 기준으로 조건부 행동 가이드를 정리해줍니다.")
 
+    # ✅ 캐시 키 생성 + '현재 결과의 캐시키'를 세션에 저장(버튼 요청 대상 고정)
     try:
         cache_key = _ai_make_cache_key(symbol, holding_type, mode_name, avg_price, last, label_mkt)
     except Exception:
         cache_key = None
+    st.session_state["active_cache_key"] = cache_key
 
     cached = (cache_key is not None and cache_key in st.session_state.get("ai_cache", {}))
     btn_label = "🔁 AI 해석 다시 생성" if cached else "✨ AI 해석 보기"
+
+    # ✅ 변경(1): AI 생성 중이면 버튼 비활성(중복 클릭/무한 스피너 방지)
+    st.markdown('<div id="ai_anchor"></div>', unsafe_allow_html=True)
 
     st.button(
         btn_label,
         key=f"ai_btn_{symbol}_{holding_type}_{mode_name}",
         on_click=request_ai_generation,
+        disabled=bool(st.session_state.get("ai_in_progress", False)),
     )
 
-    if st.session_state.get("ai_request", False):
-        st.session_state["ai_request"] = False
+    # ✅ 변경(1): AI 버튼 누르면 위로 튀지 말고 AI 위치로 스크롤
+    if st.session_state.get("scroll_to_ai", False):
+        st.markdown(
+            """
+            <script>
+              setTimeout(function () {
+                var el = document.getElementById("ai_anchor");
+                if (el) { el.scrollIntoView({behavior: "smooth", block: "start"}); }
+              }, 120);
+            </script>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.session_state["scroll_to_ai"] = False
+
+    # ✅ 변경(1): "AI가 계속 돌아감" 방지 핵심
+    # - ai_request가 True여도, '이번 결과의 cache_key'와 요청 대상(ai_request_for)이 다르면 무시
+    should_run_ai = (
+        st.session_state.get("ai_request", False)
+        and (cache_key is not None)
+        and (st.session_state.get("ai_request_for") == cache_key)
+        and (not st.session_state.get("ai_in_progress", False))
+    )
+
+    if should_run_ai:
+        st.session_state["ai_in_progress"] = True  # 락 걸기
+        st.session_state["ai_request"] = False     # 즉시 내려서 '다른 rerun에서 반복' 방지
 
         levels_dict = {
             "buy_low": buy_low, "buy_high": buy_high,
@@ -1942,6 +2014,10 @@ with col_main:
                 extra_notes=extra_notes,
                 model_name=ai_model_name,
             )
+
+        st.session_state["ai_in_progress"] = False
+        st.session_state["ai_request_for"] = None
+
         if parsed:
             if cache_key:
                 st.session_state["ai_cache"][cache_key] = parsed
@@ -1979,7 +2055,7 @@ with col_main:
                         f"""
                         <div class="card-soft-sm">
                           <div style="font-weight:700;margin-bottom:6px;">{title}</div>
-                          <div class="small-muted" style="line-height:1.45;">{desc}</div>
+                          <div class="small-muted" style="line-height:1.55; white-space:pre-line;">{desc}</div>
                         </div>
                         """,
                         unsafe_allow_html=True,
