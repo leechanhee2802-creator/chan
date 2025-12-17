@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -306,6 +307,10 @@ def get_last_extended_price(symbol: str):
         return None
 
 def safe_last_change_info(ticker_str: str):
+    """
+    (기존 유지) 주로 개별 종목/ETF/지수 등에 사용.
+    세계지표(선물/10년물/DXY)는 아래의 스냅샷 함수를 따로 사용해 튐/기준혼선 해결.
+    """
     try:
         info = yf.Ticker(ticker_str).info
         last = info.get("regularMarketPrice")
@@ -393,35 +398,133 @@ SECTOR_ETF_LIST = [
     ("커뮤니케이션 (XLC)", "XLC"),
 ]
 
+# =========================================================
+# ✅ 세계지표 튐/기준 혼선/10년물 스케일 문제 해결 패치 (통합본)
+# - 선물: NQ=F, ES=F 를 전일 종가(prev_close) 기준으로 % 계산
+# - 10년물(^TNX): 표시수익률 = TNX/10, 변화는 bp(베이시스포인트)
+# - 단일 스냅샷 + cache(ttl) + refresh_key로 새로고침 안정화
+# =========================================================
+def compute_change_percent(last, prev_close):
+    if last is None or prev_close is None:
+        return np.nan
+    if isinstance(last, float) and np.isnan(last):
+        return np.nan
+    if isinstance(prev_close, float) and np.isnan(prev_close):
+        return np.nan
+    if prev_close == 0:
+        return np.nan
+    return (float(last) / float(prev_close) - 1.0) * 100.0
+
+def compute_tnx(last_tnx, prev_close_tnx):
+    """
+    ^TNX는 '수익률 * 10' 값.
+    - 표시 수익률(%): last_tnx / 10
+    - 변화(bp): (last_tnx - prev_close_tnx) * 10
+      (ΔTNX/10 %p * 100 = ΔTNX * 10 bp)
+    """
+    if last_tnx is None or prev_close_tnx is None:
+        return np.nan, np.nan
+    if (isinstance(last_tnx, float) and np.isnan(last_tnx)) or (isinstance(prev_close_tnx, float) and np.isnan(prev_close_tnx)):
+        return np.nan, np.nan
+    yield_pct = float(last_tnx) / 10.0
+    delta_bp = (float(last_tnx) - float(prev_close_tnx)) * 10.0
+    return yield_pct, delta_bp
+
+@st.cache_data(ttl=30, show_spinner=False)
+def fetch_yf_snapshot(symbols, _refresh_key: int):
+    """
+    _refresh_key가 바뀌면 캐시 무효화.
+    ttl 30초로 너무 자주 튀는 느낌 완화.
+    """
+    out = {}
+    for sym in symbols:
+        try:
+            t = yf.Ticker(sym)
+
+            last = None
+            prev_close = None
+
+            # fast_info 시도 (가능하면 가장 안정적/가벼움)
+            try:
+                info = t.fast_info
+            except Exception:
+                info = None
+
+            if info:
+                # 키 명칭이 환경/버전마다 다르게 들어올 수 있어 or로 처리
+                last = info.get("lastPrice", None) or info.get("last_price", None)
+                prev_close = info.get("previousClose", None) or info.get("previous_close", None)
+
+            # 폴백: history로 prev/last 확보
+            if last is None or prev_close is None:
+                hist = t.history(period="5d", interval="1d")
+                if not hist.empty:
+                    last = float(hist["Close"].iloc[-1])
+                    if len(hist) >= 2:
+                        prev_close = float(hist["Close"].iloc[-2])
+                    else:
+                        prev_close = float(hist["Close"].iloc[-1])
+
+            out[sym] = {
+                "last": float(last) if last is not None else np.nan,
+                "prev_close": float(prev_close) if prev_close is not None else np.nan,
+                "ts": time.time(),
+            }
+        except Exception:
+            out[sym] = {"last": np.nan, "prev_close": np.nan, "ts": time.time()}
+    return out
+
+
 @st.cache_data(ttl=60)
 def get_us_market_overview():
+    """
+    ✅ 세계지표: NQ=F, ES=F, ^TNX, DXY는 스냅샷 기반으로 통일(전일종가 기준 + 10년물 bp)
+    ✅ 나머지(지수/ETF/빅테크/섹터)는 기존 방식 유지
+    """
     overview = {}
 
-    nq_last, nq_chg, nq_state = safe_last_change_info("NQ=F")
-    es_last, es_chg, es_state = safe_last_change_info("ES=F")
+    # ---------- (1) 세계지표 스냅샷 ----------
+    if "refresh_key" not in st.session_state:
+        st.session_state["refresh_key"] = 0
+
+    snap_symbols = ["NQ=F", "ES=F", "^TNX", "DX-Y.NYB"]
+    snap = fetch_yf_snapshot(snap_symbols, st.session_state["refresh_key"])
+
+    nq_last = snap["NQ=F"]["last"]
+    nq_prev = snap["NQ=F"]["prev_close"]
+    es_last = snap["ES=F"]["last"]
+    es_prev = snap["ES=F"]["prev_close"]
+
+    nq_chg = compute_change_percent(nq_last, nq_prev)
+    es_chg = compute_change_percent(es_last, es_prev)
+
     overview["futures"] = {
-        "nasdaq": {"last": nq_last, "chg_pct": nq_chg, "state": nq_state},
-        "sp500": {"last": es_last, "chg_pct": es_chg, "state": es_state},
+        "nasdaq": {"last": float(nq_last) if not (isinstance(nq_last, float) and np.isnan(nq_last)) else None,
+                   "chg_pct": float(nq_chg) if not (isinstance(nq_chg, float) and np.isnan(nq_chg)) else None,
+                   "state": "SNAP"},
+        "sp500":  {"last": float(es_last) if not (isinstance(es_last, float) and np.isnan(es_last)) else None,
+                   "chg_pct": float(es_chg) if not (isinstance(es_chg, float) and np.isnan(es_chg)) else None,
+                   "state": "SNAP"},
     }
 
-    tnx_last, tnx_chg, tnx_state = safe_last_change_info("^TNX")
-    if tnx_last is not None:
-        us10y = tnx_last / 10.0
-        us10y_chg = tnx_chg / 10.0 if tnx_chg is not None else None
-    else:
-        us10y, us10y_chg = None, None
+    tnx_last = snap["^TNX"]["last"]
+    tnx_prev = snap["^TNX"]["prev_close"]
+    us10y_yield, us10y_bp = compute_tnx(tnx_last, tnx_prev)
 
-    dxy_last, dxy_chg, dxy_state = safe_last_change_info("DX-Y.NYB")
+    dxy_last = snap["DX-Y.NYB"]["last"]
+    dxy_prev = snap["DX-Y.NYB"]["prev_close"]
+    dxy_chg = compute_change_percent(dxy_last, dxy_prev)
 
     overview["rates_fx"] = {
-        "us10y": us10y,
-        "us10y_chg": us10y_chg,
-        "us10y_state": tnx_state,
-        "dxy": dxy_last,
-        "dxy_chg": dxy_chg,
-        "dxy_state": dxy_state,
+        "us10y": float(us10y_yield) if not (isinstance(us10y_yield, float) and np.isnan(us10y_yield)) else None,  # %
+        "us10y_bp": float(us10y_bp) if not (isinstance(us10y_bp, float) and np.isnan(us10y_bp)) else None,        # bp
+        "us10y_state": "SNAP",
+        "dxy": float(dxy_last) if not (isinstance(dxy_last, float) and np.isnan(dxy_last)) else None,
+        "dxy_chg": float(dxy_chg) if not (isinstance(dxy_chg, float) and np.isnan(dxy_chg)) else None,
+        "dxy_state": "SNAP",
     }
 
+    # ---------- (2) 지수(기존) ----------
     ixic_last, ixic_chg, ixic_state = safe_last_change_info("^IXIC")
     gspc_last, gspc_chg, gspc_state = safe_last_change_info("^GSPC")
     overview["indexes"] = {
@@ -429,6 +532,7 @@ def get_us_market_overview():
         "sp500": {"last": gspc_last, "chg_pct": gspc_chg, "state": gspc_state},
     }
 
+    # ---------- (3) ETF(기존) ----------
     etfs = [
         get_etf_price_with_prepost("QQQ", "QQQ (나스닥100 ETF)"),
         get_etf_price_with_prepost("VOO", "VOO (S&P500 ETF)"),
@@ -436,8 +540,10 @@ def get_us_market_overview():
     ]
     overview["etfs"] = etfs
 
+    # ---------- (4) FGI ----------
     overview["fgi"] = fetch_fgi()
 
+    # ---------- (5) 빅테크 레이어(기존) ----------
     bigtech = []
     score_bt = 0
     for sym, _ in BIGTECH_LIST:
@@ -450,6 +556,7 @@ def get_us_market_overview():
         bigtech.append({"symbol": sym, "chg": chg})
     overview["bigtech"] = {"score": score_bt, "items": bigtech}
 
+    # ---------- (6) 섹터 레이어(기존) ----------
     sector = []
     score_sec = 0
     for label, sym in SECTOR_ETF_LIST:
@@ -464,7 +571,14 @@ def get_us_market_overview():
 
     return overview
 
+
 def compute_market_score(overview: dict):
+    """
+    ✅ 변경점
+    - 선물 변화율: 스냅샷 prev_close 기준의 % 사용
+    - 10년물: yield(%) + 변화(bp) 둘 다 활용
+      (표시는 bp / 스코어는 '수익률 레벨' 중심 + bp 급등/급락에 보정)
+    """
     if not overview:
         return 0, "데이터 부족", "실시간 시장 데이터를 불러오지 못했습니다."
 
@@ -487,7 +601,8 @@ def compute_market_score(overview: dict):
         elif nas_chg <= -0.3:
             score -= 1; details.append(f"나스닥 선물 {nas_chg:.2f}% (완만한 하락)")
 
-    us10y = rf.get("us10y")
+    us10y = rf.get("us10y")         # %
+    us10y_bp = rf.get("us10y_bp")   # bp
     if us10y is not None:
         if us10y < 4.0:
             score += 2; details.append(f"미 10년물 {us10y:.2f}% (금리 우호)")
@@ -498,12 +613,25 @@ def compute_market_score(overview: dict):
         else:
             score -= 1; details.append(f"미 10년물 {us10y:.2f}% (다소 부담)")
 
+    # bp 변화는 '급변'에만 보정 (너무 과민반응 방지)
+    if us10y_bp is not None:
+        if us10y_bp >= 10:
+            score -= 1; details.append(f"10년물 급등 +{us10y_bp:.1f}bp (성장주 부담)")
+        elif us10y_bp <= -10:
+            score += 1; details.append(f"10년물 급락 {us10y_bp:.1f}bp (성장주 우호)")
+
     dxy = rf.get("dxy")
+    dxy_chg = rf.get("dxy_chg")
     if dxy is not None:
         if dxy < 104:
             score += 1; details.append(f"DXY {dxy:.2f} (달러 약세 → Risk-on 우호)")
         elif dxy > 106:
             score -= 1; details.append(f"DXY {dxy:.2f} (달러 강세 → Risk-off 경계)")
+    if dxy_chg is not None:
+        if dxy_chg >= 0.35:
+            score -= 1; details.append(f"DXY +{dxy_chg:.2f}% (달러 급등 경계)")
+        elif dxy_chg <= -0.35:
+            score += 1; details.append(f"DXY {dxy_chg:.2f}% (달러 약세 우호)")
 
     for e in etfs:
         sym = e.get("symbol")
@@ -1355,6 +1483,7 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
 
     results_sorted = sorted(results, key=lambda x: x["score"], reverse=True)
     return market_score, results_sorted[:max_results]
+
 # =====================================
 # 세션 상태
 # =====================================
@@ -1389,6 +1518,10 @@ if "ai_request" not in st.session_state:
 if "ai_request_key" not in st.session_state:
     st.session_state["ai_request_key"] = None
 
+# ✅ 세계지표 패치용 refresh_key
+if "refresh_key" not in st.session_state:
+    st.session_state["refresh_key"] = 0
+
 # 사이드 클릭 -> 분석 트리거
 if st.session_state.get("pending_symbol"):
     ps = st.session_state["pending_symbol"]
@@ -1396,6 +1529,7 @@ if st.session_state.get("pending_symbol"):
     st.session_state["selected_symbol"] = ps
     st.session_state["run_from_side"] = True
     st.session_state["pending_symbol"] = ""
+
 
 # =====================================
 # 레이아웃: 메인 + 사이드
@@ -1443,7 +1577,9 @@ with col_main:
         with col_btn1:
             refresh = st.button("🔄 새로고침", key="refresh_overview")
         if refresh:
-            get_us_market_overview.clear()
+            # ✅ 패치: refresh_key 올리고 캐시 clear로 스냅샷/세계지표 튐 완화
+            st.session_state["refresh_key"] += 1
+            st.cache_data.clear()
 
         with st.spinner("미국 선물 · 금리 · 달러 · ETF · 레이어 상황 불러오는 중..."):
             ov = get_us_market_overview()
@@ -1464,7 +1600,7 @@ with col_main:
             lastv = nas.get("last")
             chg = nas.get("chg_pct")
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown('<div class="metric-label">나스닥 선물</div>', unsafe_allow_html=True)
+            st.markdown('<div class="metric-label">나스닥 선물 (전일 종가 기준)</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="metric-value">{lastv:.1f}</div>' if lastv is not None else '<div class="metric-value">N/A</div>', unsafe_allow_html=True)
             if chg is not None:
                 st.markdown(f'<div class="metric-delta-pos">↑ {chg:.2f}%</div>' if chg >= 0 else f'<div class="metric-delta-neg">↓ {abs(chg):.2f}%</div>', unsafe_allow_html=True)
@@ -1474,7 +1610,7 @@ with col_main:
             lastv = es.get("last")
             chg = es.get("chg_pct")
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown('<div class="metric-label">S&P500 선물</div>', unsafe_allow_html=True)
+            st.markdown('<div class="metric-label">S&P500 선물 (전일 종가 기준)</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="metric-value">{lastv:.1f}</div>' if lastv is not None else '<div class="metric-value">N/A</div>', unsafe_allow_html=True)
             if chg is not None:
                 st.markdown(f'<div class="metric-delta-pos">↑ {chg:.2f}%</div>' if chg >= 0 else f'<div class="metric-delta-neg">↓ {abs(chg):.2f}%</div>', unsafe_allow_html=True)
@@ -1534,12 +1670,21 @@ with col_main:
         col4, col5, col6 = st.columns(3)
         with col4:
             us10y = rf.get("us10y")
-            us10y_chg = rf.get("us10y_chg")
+            us10y_bp = rf.get("us10y_bp")
+
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown('<div class="metric-label">미 10년물</div>', unsafe_allow_html=True)
+            st.markdown('<div class="metric-label">미 10년물 (TNX/10) · 변화(bp)</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="metric-value">{us10y:.2f}%</div>' if us10y is not None else '<div class="metric-value">N/A</div>', unsafe_allow_html=True)
-            if us10y_chg is not None:
-                st.markdown(f'<div class="metric-delta-pos">▲ {us10y_chg:.3f}p</div>' if us10y_chg >= 0 else f'<div class="metric-delta-neg">▼ {abs(us10y_chg):.3f}p</div>', unsafe_allow_html=True)
+
+            # ✅ 금리 변화는 bp로 표시: 금리↑(bp+)는 빨강, 금리↓(bp-)는 초록
+            if us10y_bp is not None:
+                if us10y_bp > 0:
+                    st.markdown(f'<div class="metric-delta-neg">▲ {us10y_bp:.1f}bp (금리↑)</div>', unsafe_allow_html=True)
+                elif us10y_bp < 0:
+                    st.markdown(f'<div class="metric-delta-pos">▼ {abs(us10y_bp):.1f}bp (금리↓)</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="metric-delta-pos">0.0bp</div>', unsafe_allow_html=True)
+
             st.markdown('</div>', unsafe_allow_html=True)
 
         with col5:
@@ -1555,7 +1700,7 @@ with col_main:
         with col6:
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
             st.markdown('<div class="metric-label">참고</div>', unsafe_allow_html=True)
-            st.markdown('<div class="small-muted">※ 수치는 약간의 지연이 있을 수 있습니다.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="small-muted">※ 선물/10년물/DXY는 "스냅샷(prev close 기준)"으로 통일해 튐을 완화했습니다.</div>', unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
         st.markdown("---")
@@ -2103,7 +2248,7 @@ with col_main:
 
     ai_out = None
     if cache_key and cache_key in st.session_state.get("ai_cache", {}):
-        ai_out = st.session_state["ai_cache"][cache_key]
+        ai_out = st.session_state.get("ai_cache")[cache_key]
 
     if ai_out is not None:
         one = str(ai_out.get("summary_one_line", "")).strip()
