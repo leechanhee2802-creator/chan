@@ -1,12 +1,38 @@
 import numpy as np
 import streamlit as st
+from app_core import analysis
 
-from app_core import ai, analysis, config, market, state, symbols
+from app_core.ai import _ai_make_cache_key, ai_summarize_and_explain, request_ai_generation
+from app_core.analysis import (
+    add_indicators,
+    build_risk_alerts,
+    calc_gap_info,
+    calc_levels,
+    calc_rr_ratio,
+    get_heavy_days,
+    get_intraday_5m,
+    get_intraday_5m_score,
+    get_mode_config,
+    get_price_data,
+    scan_new_entry_candidates,
+    short_term_bias,
+)
+from app_core.config import configure_page, inject_global_styles
+from app_core.market import (
+    compute_market_score,
+    compute_market_verdict_scores,
+    get_last_extended_price,
+    get_us_market_overview,
+    get_usdkrw_rate,
+    market_state_badge_from_etfs,
+)
+from app_core.state import initialize_session_state
+from app_core.symbols import POPULAR_SYMBOLS, normalize_symbol
 
 
-config.configure_page()
-config.inject_global_styles()
-state.initialize_session_state()
+configure_page()
+inject_global_styles()
+initialize_session_state()
 # =====================================
 # 레이아웃: 메인 + 사이드
 # =====================================
