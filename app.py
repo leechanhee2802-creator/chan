@@ -84,7 +84,7 @@ with col_main:
             st.cache_data.clear()
 
         with st.spinner("미국 선물 · 금리 · 달러 · ETF · 레이어 상황 불러오는 중..."):
-            ov = market.get_us_market_overview()
+            ov = get_us_market_overview()
 
         score_mkt, label_mkt, detail_mkt = market.compute_market_score(ov)
 
