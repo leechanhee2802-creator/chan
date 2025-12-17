@@ -8,7 +8,6 @@ from app_core.analysis import (
     calc_gap_info,
     calc_levels,
     calc_rr_ratio,
-    compute_state_and_action,
     get_heavy_days,
     get_intraday_5m,
     get_intraday_5m_score,
