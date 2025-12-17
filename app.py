@@ -457,7 +457,7 @@ with col_main:
     }
 
     # ✅ 상태 머신
-    state_name, action_text, recover_level, phase = compute_state_and_action(
+    state_name, action_text, recover_level, phase = analysis.compute_state_and_action(
         holding_type=holding_type,
         price_now=price_now,
         avg_price=avg_price,
