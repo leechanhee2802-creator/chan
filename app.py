@@ -239,8 +239,10 @@ with col_main:
         st.markdown('<div class="layer-title-en">BIG TECH LAYER</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="chip chip-green">빅테크 강도 점수: {bt_score}</div>', unsafe_allow_html=True)
         for it in bt_items:
-            sym = it["symbol"]
-            chg = it["chg"]
+            sym = it.get("symbol")
+            chg = it.get("chg")
+            if sym is None:
+                continue
             if chg is None:
                 continue
             sign = "+" if chg > 0 else ""
@@ -259,8 +261,10 @@ with col_main:
         st.markdown('<div class="layer-title-en">SECTOR ROTATION LAYER</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="chip chip-blue">섹터 점수: {sec_score}</div>', unsafe_allow_html=True)
         for it in sec_items:
-            label = it["label"]
-            chg = it["chg"]
+            label = it.get("label")
+            chg = it.get("chg")
+            if label is None:
+                continue
             if chg is None:
                 continue
             sign = "+" if chg > 0 else ""
