@@ -1,8 +1,6 @@
 import numpy as np
 import streamlit as st
 
-import app_core.analysis as analysis
-
 from app_core.ai import _ai_make_cache_key, ai_summarize_and_explain, request_ai_generation
 from app_core.analysis import (
     add_indicators,
