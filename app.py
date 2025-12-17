@@ -84,9 +84,9 @@ with col_main:
             st.cache_data.clear()
 
         with st.spinner("미국 선물 · 금리 · 달러 · ETF · 레이어 상황 불러오는 중..."):
-            ov = get_us_market_overview()
+            ov = market.get_us_market_overview()
 
-        score_mkt, label_mkt, detail_mkt = compute_market_score(ov)
+        score_mkt, label_mkt, detail_mkt = market.compute_market_score(ov)
 
         fut = ov.get("futures", {})
         rf = ov.get("rates_fx", {})
@@ -126,8 +126,8 @@ with col_main:
             st.markdown('</div>', unsafe_allow_html=True)
             st.caption("※ 범위: -8 ~ 8 | 선물·금리·달러·ETF 기준 종합")
 
-        verdict = compute_market_verdict_scores(ov)
-        session_badge, session_cls = market_state_badge_from_etfs(etfs)
+        verdict = market.compute_market_verdict_scores(ov)
+        session_badge, session_cls = market.market_state_badge_from_etfs(etfs)
 
         if verdict:
             st.markdown(
@@ -299,10 +299,10 @@ with col_main:
             value=0.2, step=0.05,
         )
 
-    cfg = get_mode_config(mode_name)
+    cfg = analysis.get_mode_config(mode_name)
 
     prefix = (user_symbol or "").strip().upper().replace(" ", "")
-    candidates = sorted(set(POPULAR_SYMBOLS + st.session_state["recent_symbols"]))
+    candidates = sorted(set(symbols.POPULAR_SYMBOLS + st.session_state["recent_symbols"]))
     suggestions = [s for s in candidates if s.startswith(prefix)] if prefix else []
     if suggestions:
         st.caption("자동완성 도움: " + ", ".join(suggestions[:6]))
@@ -344,7 +344,7 @@ with col_main:
         commission_pct = _p.get("commission_pct", commission_pct)
         avg_price = float(_p.get("avg_price", avg_price or 0.0) or 0.0)
         shares = int(_p.get("shares", shares or 0) or 0)
-        cfg = get_mode_config(mode_name)
+        cfg = analysis.get_mode_config(mode_name)
 
     # 스캐너
     with st.expander("🛰 신규 진입 스캐너 (간단 버전)", expanded=False):
@@ -361,7 +361,7 @@ with col_main:
 
         if scan_click:
             with st.spinner("신규 진입 후보 종목 스캔 중..."):
-                scan_mkt_score, scan_list = scan_new_entry_candidates(cfg)
+                scan_mkt_score, scan_list = analysis.scan_new_entry_candidates(cfg)
             st.session_state["scan_results"] = {"market_score": scan_mkt_score, "items": scan_list}
 
         scan_data = st.session_state.get("scan_results")
@@ -402,7 +402,7 @@ with col_main:
         st.stop()
 
     # ---- 결과 렌더 ----
-    symbol = normalize_symbol(user_symbol)
+    symbol = symbols.normalize_symbol(user_symbol)
     display_name = user_symbol.strip() if user_symbol else ""
 
     if not symbol:
@@ -410,21 +410,21 @@ with col_main:
         st.stop()
 
     with st.spinner("데이터 불러오는 중..."):
-        ov = get_us_market_overview()
+        ov = market.get_us_market_overview()
         fgi = ov.get("fgi")
 
-        df = get_price_data(symbol, cfg["period"])
+        df = analysis.get_price_data(symbol, cfg["period"])
         if df.empty:
             st.error("❌ 이 종목은 선택한 기간 동안 데이터가 부족하거나, 티커가 잘못되었습니다.")
             st.stop()
 
-        df = add_indicators(df)
+        df = analysis.add_indicators(df)
         if df.empty:
             st.error("❌ 지표 계산에 필요한 데이터가 부족합니다.")
             st.stop()
 
         last = df.iloc[-1]
-        df_5m = get_intraday_5m(symbol)
+        df_5m = analysis.get_intraday_5m(symbol)
 
     # 최근/즐겨찾기
     if symbol not in st.session_state["recent_symbols"]:
@@ -433,13 +433,13 @@ with col_main:
 
     # 가격: 레벨은 일봉, 상태는 시외 포함 최근가
     price_close = float(last["Close"])
-    ext_price = get_last_extended_price(symbol)
+    ext_price = market.get_last_extended_price(symbol)
     price_now = float(ext_price) if ext_price is not None else price_close
 
     profit_pct = (price_now - avg_price) / avg_price * 100 if avg_price > 0 else 0.0
     total_pnl = (price_now - avg_price) * shares if (shares > 0 and avg_price > 0) else 0.0
 
-    buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = calc_levels(df, last, cfg)
+    buy_low, buy_high, tp0, tp1, tp2, sl0, sl1 = analysis.calc_levels(df, last, cfg)
 
     # ✅ 신규 진입 손절: ATR 기반 보정 (변동성 반영)
     atr14 = float(last["ATR14"]) if "ATR14" in last and not np.isnan(last["ATR14"]) else None
@@ -469,18 +469,18 @@ with col_main:
     # ✅ 구조 붕괴 플래그 (UI에서 레벨 무효화/숨김 처리)
     structure_broken = ("구조 붕괴" in state_name)
 
-    rr = calc_rr_ratio(price_now, tp1, sl0)
+    rr = analysis.calc_rr_ratio(price_now, tp1, sl0)
 
-    bias_comment = short_term_bias(last)
-    gap_pct, gap_comment = calc_gap_info(df)
+    bias_comment = analysis.short_term_bias(last)
+    gap_pct, gap_comment = analysis.calc_gap_info(df)
     price_move_abs = abs(float(last["Close"]) - float(last["Open"])) if atr14 is not None else None
 
-    vp_levels = get_volume_profile(df)
-    heavy_days = get_heavy_days(df)
-    intraday_sc, intraday_comment = get_intraday_5m_score(df_5m)
+    vp_levels = analysis.get_volume_profile(df)
+    heavy_days = analysis.get_heavy_days(df)
+    intraday_sc, intraday_comment = analysis.get_intraday_5m_score(df_5m)
 
-    score_mkt, _, _ = compute_market_score(ov)
-    alerts = build_risk_alerts(score_mkt, last, gap_pct, atr14, price_move_abs)
+    score_mkt, _, _ = market.compute_market_score(ov)
+    alerts = analysis.build_risk_alerts(score_mkt, last, gap_pct, atr14, price_move_abs)
 
     is_fav = symbol in st.session_state["favorite_symbols"]
     fav_new = st.checkbox("⭐ 이 종목 즐겨찾기", value=is_fav)
@@ -560,7 +560,7 @@ with col_main:
         st.write(f"- (현재가 기준) 수익률: **{profit_pct:.2f}%**")
 
     if holding_type == "보유 중" and shares > 0 and avg_price > 0:
-        rate = get_usdkrw_rate()
+        rate = market.get_usdkrw_rate()
         cost_factor = 1 - commission_pct / 100
         total_pnl_after_fee = total_pnl * cost_factor
         pnl_krw = total_pnl_after_fee * rate
@@ -679,7 +679,7 @@ with col_main:
     st.caption("※ AI는 '확정 매수/매도 지시'가 아니라, 현재가 기준의 '조건부 행동지침'만 제공합니다.")
 
     try:
-        cache_key = _ai_make_cache_key(symbol, holding_type, mode_name, avg_price, last, label_mkt, state_name, price_now)
+        cache_key = ai._ai_make_cache_key(symbol, holding_type, mode_name, avg_price, last, label_mkt, state_name, price_now)
     except Exception:
         cache_key = None
 
@@ -690,7 +690,7 @@ with col_main:
         st.button(
             btn_label,
             key=f"ai_btn_{cache_key}",
-            on_click=request_ai_generation,
+            on_click=ai.request_ai_generation,
             args=(cache_key,),
         )
     else:
@@ -725,7 +725,7 @@ with col_main:
 
         with st.spinner("AI 해석 생성 중..."):
             ai_model_name = st.session_state.get("ai_model_name", "gpt-4o-mini")
-            parsed, err = ai_summarize_and_explain(
+            parsed, err = ai.ai_summarize_and_explain(
                 symbol=symbol,
                 holding_type=holding_type,
                 mode_name=mode_name,
