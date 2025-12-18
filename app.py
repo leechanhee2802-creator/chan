@@ -1,8 +1,7 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import numpy as np
-import requests
+from app_core import analysis, market
 
 # 선택 기능: AI 해석(요약/헷갈림 설명)
 try:
@@ -263,206 +262,9 @@ def normalize_symbol(user_input: str) -> str:
         return KOREAN_TICKER_MAP[name]
     return name.replace(" ", "").upper()
 
-# =====================================
-# 외부 지표 함수들
-# =====================================
-def fetch_fgi():
-    url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    try:
-        r = requests.get(url, headers=headers, timeout=5)
-        r.raise_for_status()
-        data = r.json()
-        series = data.get("fear_and_greed_historical", {}).get("data", [])
-        if not series:
-            return None
-        last_point = series[-1]
-        return float(last_point.get("y"))
-    except Exception:
-        return None
-
-def get_usdkrw_rate():
-    try:
-        ticker = yf.Ticker("USDKRW=X")
-        df = ticker.history(period="1d")
-        if df.empty:
-            return 1350.0
-        return float(df["Close"].iloc[-1])
-    except Exception:
-        return 1350.0
-
-def get_last_extended_price(symbol: str):
-    """
-    프리/정규/애프터 포함 가장 최근 1분봉 Close를 사용(있으면).
-    - "상태 전환" 판정에 사용
-    """
-    try:
-        t = yf.Ticker(symbol)
-        df = t.history(period="1d", interval="1m", auto_adjust=False, prepost=True)
-        if df.empty:
-            return None
-        return float(df["Close"].iloc[-1])
-    except Exception:
-        return None
-
-def safe_last_change_info(ticker_str: str):
-    try:
-        info = yf.Ticker(ticker_str).info
-        last = info.get("regularMarketPrice")
-        prev = info.get("regularMarketPreviousClose")
-        market_state = info.get("marketState", "")
-        if last is None or prev in (None, 0, 0.0):
-            return None, None, market_state
-        chg_pct = (last - prev) / prev * 100
-        return float(last), float(chg_pct), market_state
-    except Exception:
-        return None, None, ""
-
-def get_etf_price_with_prepost(symbol: str, name: str):
-    try:
-        t = yf.Ticker(symbol)
-        info = t.info
-
-        market_state = info.get("marketState", "")
-        prev_close = info.get("regularMarketPreviousClose")
-
-        pre = info.get("preMarketPrice")
-        post = info.get("postMarketPrice")
-        regular = info.get("regularMarketPrice")
-
-        current = None
-        chg_pct = None
-        basis = "기준 불명"
-
-        if market_state == "PRE" and pre is not None:
-            current = pre
-            basis = "프리장 기준"
-            chg_pct = info.get("preMarketChangePercent")
-            if chg_pct is None and prev_close not in (None, 0, 0.0):
-                chg_pct = (pre - prev_close) / prev_close * 100
-        elif market_state == "POST" and post is not None:
-            current = post
-            basis = "애프터장 기준"
-            chg_pct = info.get("postMarketChangePercent")
-            if chg_pct is None and prev_close not in (None, 0, 0.0):
-                chg_pct = (post - prev_close) / prev_close * 100
-        elif regular is not None:
-            current = regular
-            basis = "정규장 기준"
-            chg_pct = info.get("regularMarketChangePercent")
-            if chg_pct is None and prev_close not in (None, 0, 0.0):
-                chg_pct = (regular - prev_close) / prev_close * 100
-
-        if current is None:
-            current = pre or post or regular
-
-        return {
-            "symbol": symbol,
-            "name": name,
-            "current": float(current) if current is not None else None,
-            "basis": basis,
-            "chg_pct": float(chg_pct) if chg_pct is not None else None,
-            "market_state": market_state,
-        }
-    except Exception:
-        return {
-            "symbol": symbol,
-            "name": name,
-            "current": None,
-            "basis": "조회 실패",
-            "chg_pct": None,
-            "market_state": "",
-        }
-
-BIGTECH_LIST = [
-    ("NVDA", "NVDA"),
-    ("AAPL", "AAPL"),
-    ("MSFT", "MSFT"),
-    ("AMZN", "AMZN"),
-    ("META", "META"),
-    ("GOOGL", "GOOGL"),
-    ("TSLA", "TSLA"),
-]
-
-SECTOR_ETF_LIST = [
-    ("기술주 (XLK)", "XLK"),
-    ("반도체 (SOXX)", "SOXX"),
-    ("금융 (XLF)", "XLF"),
-    ("헬스케어 (XLV)", "XLV"),
-    ("에너지 (XLE)", "XLE"),
-    ("커뮤니케이션 (XLC)", "XLC"),
-]
-
 @st.cache_data(ttl=60)
 def get_us_market_overview():
-    overview = {}
-
-    nq_last, nq_chg, nq_state = safe_last_change_info("NQ=F")
-    es_last, es_chg, es_state = safe_last_change_info("ES=F")
-    overview["futures"] = {
-        "nasdaq": {"last": nq_last, "chg_pct": nq_chg, "state": nq_state},
-        "sp500": {"last": es_last, "chg_pct": es_chg, "state": es_state},
-    }
-
-    tnx_last, tnx_chg, tnx_state = safe_last_change_info("^TNX")
-    if tnx_last is not None:
-        us10y = tnx_last / 10.0
-        us10y_chg = tnx_chg / 10.0 if tnx_chg is not None else None
-    else:
-        us10y, us10y_chg = None, None
-
-    dxy_last, dxy_chg, dxy_state = safe_last_change_info("DX-Y.NYB")
-
-    overview["rates_fx"] = {
-        "us10y": us10y,
-        "us10y_chg": us10y_chg,
-        "us10y_state": tnx_state,
-        "dxy": dxy_last,
-        "dxy_chg": dxy_chg,
-        "dxy_state": dxy_state,
-    }
-
-    ixic_last, ixic_chg, ixic_state = safe_last_change_info("^IXIC")
-    gspc_last, gspc_chg, gspc_state = safe_last_change_info("^GSPC")
-    overview["indexes"] = {
-        "nasdaq": {"last": ixic_last, "chg_pct": ixic_chg, "state": ixic_state},
-        "sp500": {"last": gspc_last, "chg_pct": gspc_chg, "state": gspc_state},
-    }
-
-    etfs = [
-        get_etf_price_with_prepost("QQQ", "QQQ (나스닥100 ETF)"),
-        get_etf_price_with_prepost("VOO", "VOO (S&P500 ETF)"),
-        get_etf_price_with_prepost("SOXX", "SOXX (반도체 ETF)"),
-    ]
-    overview["etfs"] = etfs
-
-    overview["fgi"] = fetch_fgi()
-
-    bigtech = []
-    score_bt = 0
-    for sym, _ in BIGTECH_LIST:
-        _, chg, _ = safe_last_change_info(sym)
-        if chg is not None:
-            if chg >= 1:
-                score_bt += 1
-            elif chg <= -1:
-                score_bt -= 1
-        bigtech.append({"symbol": sym, "chg": chg})
-    overview["bigtech"] = {"score": score_bt, "items": bigtech}
-
-    sector = []
-    score_sec = 0
-    for label, sym in SECTOR_ETF_LIST:
-        _, chg, _ = safe_last_change_info(sym)
-        if chg is not None:
-            if chg >= 0.8:
-                score_sec += 1
-            elif chg <= -0.8:
-                score_sec -= 1
-        sector.append({"label": label, "symbol": sym, "chg": chg})
-    overview["sector"] = {"score": score_sec, "items": sector}
-
-    return overview
+    return market.get_us_market_overview()
 
 def compute_market_score(overview: dict):
     if not overview:
@@ -601,7 +403,7 @@ def compute_market_verdict_scores(overview: dict):
 
     bt = overview.get("bigtech", {}) or {}
     bt_score = bt.get("score", 0)
-    n = max(1, len(BIGTECH_LIST))
+    n = max(1, len(market.BIGTECH_LIST))
     leader_0_100 = _clamp(50 + (float(bt_score) / n) * 30)
 
     line_macro = f"세계지표: {score_to_text(macro_0_100)}"
@@ -655,72 +457,6 @@ def compute_market_verdict_scores(overview: dict):
         "conclusion": conclusion,
         "holder_line": holder_line,
     }
-
-# =====================================
-# 가격 데이터 + 지표 (레벨 계산은 일봉)
-# =====================================
-def get_price_data(symbol, period="6mo"):
-    if not symbol or symbol.strip() == "":
-        return pd.DataFrame()
-    try:
-        ticker = yf.Ticker(symbol)
-        df = ticker.history(period=period, interval="1d", auto_adjust=False)
-    except ValueError:
-        return pd.DataFrame()
-    if df.empty:
-        return df
-    return df[["Open", "High", "Low", "Close", "Volume"]].dropna()
-
-def add_indicators(df: pd.DataFrame):
-    close = df["Close"]
-    high = df["High"]
-    low = df["Low"]
-
-    df["MA5"] = close.rolling(5).mean()
-
-    ma20 = close.rolling(20).mean()
-    std20 = close.rolling(20).std()
-    df["MA20"] = ma20
-    df["BBL"] = ma20 - 2 * std20
-    df["BBU"] = ma20 + 2 * std20
-
-    ema12 = close.ewm(span=12, adjust=False).mean()
-    ema26 = close.ewm(span=26, adjust=False).mean()
-    df["MACD"] = ema12 - ema26
-    df["MACD_SIGNAL"] = df["MACD"].ewm(span=9, adjust=False).mean()
-
-    low14 = low.rolling(14).min()
-    high14 = high.rolling(14).max()
-    df["STOCH_K"] = (close - low14) / (high14 - low14) * 100
-    df["STOCH_D"] = df["STOCH_K"].rolling(3).mean()
-
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    roll_up = gain.ewm(alpha=1 / 14, adjust=False).mean()
-    roll_down = loss.ewm(alpha=1 / 14, adjust=False).mean()
-    rs = roll_up / roll_down
-    df["RSI14"] = 100 - (100 / (1 + rs))
-
-    df["MA50"] = close.rolling(50).mean()
-
-    tr1 = high - low
-    tr2 = (high - close.shift(1)).abs()
-    tr3 = (low - close.shift(1)).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    df["ATR14"] = tr.rolling(14).mean()
-
-    return df.dropna()
-
-def get_intraday_5m(symbol: str):
-    try:
-        t = yf.Ticker(symbol)
-        df = t.history(period="2d", interval="5m", auto_adjust=False, prepost=False)
-        if df.empty:
-            return pd.DataFrame()
-        return df[["Open", "High", "Low", "Close", "Volume"]].dropna()
-    except Exception:
-        return pd.DataFrame()
 
 # =====================================
 # AI 해석 유틸 (상태 머신 반영)
@@ -872,34 +608,6 @@ def request_ai_generation(cache_key: str):
 # =====================================
 # 코멘트/판단 함수들
 # =====================================
-def short_term_bias(last_row):
-    price = float(last_row["Close"])
-    ma5 = float(last_row["MA5"])
-    ma20 = float(last_row["MA20"])
-    macd = float(last_row["MACD"])
-    macds = float(last_row["MACD_SIGNAL"])
-    rsi = float(last_row["RSI14"])
-    k = float(last_row["STOCH_K"])
-    d = float(last_row["STOCH_D"])
-
-    score = 0
-    score += 1 if price > ma20 else -1
-    score += 1 if price > ma5 else -1
-    score += 1 if macd > macds else -1
-
-    if rsi > 60: score += 1
-    elif rsi < 40: score -= 1
-
-    if k > d and k > 50: score += 1
-    elif k < d and k < 50: score -= 1
-
-    if score >= 3:
-        return "단기 상방 우세 (며칠 내 상승 압력이 상대적으로 큼)"
-    elif score <= -3:
-        return "단기 하방 우세 (며칠 내 조정/하락 압력이 큼)"
-    else:
-        return "단기 중립~혼조 (방향성이 뚜렷하지 않음)"
-
 def get_mode_config(mode_name: str):
     if mode_name == "단타":
         return {"name": "단타", "period": "3mo", "lookback_short": 10, "lookback_long": 20, "atr_mult": 1.0}
@@ -1002,35 +710,6 @@ def calc_levels(df, last, cfg):
     tp0, tp1, tp2 = calc_trend_targets(df, cfg)
     sl0, sl1 = calc_trend_stops(df, cfg)
     return buy_low, buy_high, tp0, tp1, tp2, sl0, sl1
-
-def calc_gap_info(df: pd.DataFrame):
-    if len(df) < 2:
-        return None, None
-    prev_close = float(df["Close"].iloc[-2])
-    today_open = float(df["Open"].iloc[-1])
-    gap_pct = (today_open - prev_close) / prev_close * 100
-    if gap_pct > 1.5:
-        comment = "강한 갭상 출발 (상승 모멘텀 강함, 갭 메움 체크 필요)"
-    elif gap_pct > 0.3:
-        comment = "완만한 갭상 출발 (긍정적 시초 분위기)"
-    elif gap_pct < -1.5:
-        comment = "강한 갭하 출발 (위험, 공포성 매도 가능)"
-    elif gap_pct < -0.3:
-        comment = "완만한 갭하 출발 (조정성 출발)"
-    else:
-        comment = "갭 거의 없음 (중립적 시초)"
-    return gap_pct, comment
-
-def calc_rr_ratio(price, tp, sl):
-    if tp is None or sl is None:
-        return None
-    if tp <= price or sl >= price:
-        return None
-    risk = price - sl
-    reward = tp - price
-    if risk <= 0 or reward <= 0:
-        return None
-    return reward / risk
 
 # =====================================
 # ✅ 상태 머신: 구조 붕괴면 레벨 무효화 + 회복만 남김
@@ -1186,113 +865,6 @@ def compute_state_and_action(
 # =====================================
 # 매물대/거래량 관련
 # =====================================
-def get_volume_profile(df: pd.DataFrame, bins: int = 5):
-    recent = df.tail(20)
-    prices = recent["Close"]
-    vols = recent["Volume"]
-    if len(recent) < 5:
-        return []
-    min_p, max_p = prices.min(), prices.max()
-    if min_p == max_p:
-        return []
-    edges = np.linspace(min_p, max_p, bins + 1)
-    idx = np.digitize(prices, edges) - 1
-    idx = np.clip(idx, 0, bins - 1)
-    bucket_vol = {}
-    for i, v in zip(idx, vols):
-        bucket_vol[i] = bucket_vol.get(i, 0) + v
-    levels = []
-    for i, total_v in bucket_vol.items():
-        low = edges[i]
-        high = edges[i + 1]
-        mid = (low + high) / 2
-        levels.append({"mid": mid, "low": low, "high": high, "volume": total_v})
-    return sorted(levels, key=lambda x: x["volume"], reverse=True)[:3]
-
-def get_heavy_days(df: pd.DataFrame, n: int = 3):
-    recent = df.tail(30)
-    if recent.empty:
-        return []
-    heavy = recent.sort_values("Volume", ascending=False).head(n)
-    res = []
-    for idx, row in heavy.iterrows():
-        res.append({"date": idx.date(), "close": float(row["Close"]), "volume": int(row["Volume"])})
-    return res
-
-def get_intraday_5m_score(df_5m: pd.DataFrame):
-    if df_5m.empty:
-        return None, "5분봉 데이터 부족"
-
-    last = df_5m.iloc[-1]
-    price = float(last["Close"])
-
-    last50 = df_5m.tail(50)
-    ma20_5m = last50["Close"].rolling(20).mean().iloc[-1]
-
-    score = 0
-    details = []
-
-    if price > ma20_5m:
-        score += 1; details.append("5분봉 기준 단기 상방 유지")
-    else:
-        details.append("5분봉 기준 단기 하락/조정")
-
-    last10 = df_5m.tail(10)
-    up_cnt = (last10["Close"] > last10["Open"]).sum()
-    if up_cnt >= 6:
-        score += 1; details.append(f"최근 10개 캔들 중 {up_cnt}개 상승 (매수 우위)")
-    else:
-        details.append(f"최근 10개 캔들 중 상승 {up_cnt}개")
-
-    vol_recent = last50["Volume"]
-    med_vol = vol_recent.median()
-    today_vol = last["Volume"]
-    if med_vol > 0 and today_vol > med_vol * 1.3:
-        score += 1; details.append("최근 대비 5분봉 거래량 급증")
-    else:
-        details.append("5분봉 거래량 평이")
-
-    if len(df_5m) >= 2:
-        prev = df_5m.iloc[-2]
-        if price > prev["Close"]:
-            score += 1; details.append("직전 봉 대비 가격 상승")
-        else:
-            details.append("직전 봉 대비 가격 약화")
-
-    if score >= 3:
-        comment = "장중 매수세 우위 (단타/추세 이어질 가능성↑)"
-    elif score == 2:
-        comment = "장중 약한 매수 우세 혹은 혼조"
-    elif score == 1:
-        comment = "매수/매도 힘 균형, 뚜렷한 방향성 약함"
-    else:
-        comment = "장중 매도 우위 또는 관망 권장"
-
-    return score, comment + " / " + " · ".join(details)
-
-def build_risk_alerts(market_score, last_row, gap_pct, atr14, price_move_abs):
-    alerts = []
-    if market_score <= -4:
-        alerts.append("📉 시장 자체가 강한 Risk-off (지수/금리/달러 조합상 공포장 가능성)")
-
-    rsi = float(last_row["RSI14"])
-    if rsi >= 75:
-        alerts.append("🔥 RSI 75 이상 – 단기 과열, 급락 조심")
-    elif rsi <= 25:
-        alerts.append("❄ RSI 25 이하 – 과매도이나 추세 하락일 수 있음")
-
-    if gap_pct is not None and abs(gap_pct) >= 2.0:
-        alerts.append(f"⚡ 전일 종가 대비 {gap_pct:.2f}% 갭 – 갭 메움/추세 연장 모두 가능, 변동성 주의")
-
-    if atr14 is not None and atr14 > 0 and price_move_abs is not None:
-        atr_ratio = price_move_abs / atr14
-        if atr_ratio >= 1.5:
-            alerts.append(f"🚨 오늘 움직임이 ATR의 {atr_ratio:.1f}배 – 평소보다 크게 흔들리는 장세")
-
-    if not alerts:
-        alerts.append("✅ 특별한 리스크 경고 없음 (기본적인 기술적/시장 환경)")
-    return alerts
-
 # =====================================
 # 신규 진입 스캐너 (A안: 심플)
 # =====================================
@@ -1302,10 +874,10 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
     market_score, _, _ = compute_market_score(ov)
 
     for sym in SCAN_CANDIDATES:
-        df = get_price_data(sym, cfg["period"])
+        df = market.get_price_data(sym, cfg["period"])
         if df.empty:
             continue
-        df = add_indicators(df)
+        df = analysis.add_indicators(df)
         if df.empty or len(df) < max(30, cfg["lookback_long"] + 5):
             continue
 
@@ -1325,7 +897,7 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
         if rsi > 65:
             continue
 
-        bias = short_term_bias(last)
+        bias = analysis.short_term_bias(last)
         score = 0
         if "상방" in bias:
             score += 2
@@ -1337,7 +909,7 @@ def scan_new_entry_candidates(cfg: dict, max_results: int = 8):
 
         # 스캐너는 단순 RR 유지
         sl0_new = buy_low * 0.97
-        rr = calc_rr_ratio(price_close, tp1, sl0_new)
+        rr = analysis.calc_rr_ratio(price_close, tp1, sl0_new)
 
         results.append({
             "symbol": sym,
@@ -1762,18 +1334,18 @@ with col_main:
         ov = get_us_market_overview()
         fgi = ov.get("fgi")
 
-        df = get_price_data(symbol, cfg["period"])
+        df = market.get_price_data(symbol, cfg["period"])
         if df.empty:
             st.error("❌ 이 종목은 선택한 기간 동안 데이터가 부족하거나, 티커가 잘못되었습니다.")
             st.stop()
 
-        df = add_indicators(df)
+        df = analysis.add_indicators(df)
         if df.empty:
             st.error("❌ 지표 계산에 필요한 데이터가 부족합니다.")
             st.stop()
 
         last = df.iloc[-1]
-        df_5m = get_intraday_5m(symbol)
+        df_5m = market.get_intraday_5m(symbol)
 
     # 최근/즐겨찾기
     if symbol not in st.session_state["recent_symbols"]:
@@ -1782,7 +1354,7 @@ with col_main:
 
     # 가격: 레벨은 일봉, 상태는 시외 포함 최근가
     price_close = float(last["Close"])
-    ext_price = get_last_extended_price(symbol)
+    ext_price = market.get_last_extended_price(symbol)
     price_now = float(ext_price) if ext_price is not None else price_close
 
     profit_pct = (price_now - avg_price) / avg_price * 100 if avg_price > 0 else 0.0
@@ -1818,18 +1390,18 @@ with col_main:
     # ✅ 구조 붕괴 플래그 (UI에서 레벨 무효화/숨김 처리)
     structure_broken = ("구조 붕괴" in state_name)
 
-    rr = calc_rr_ratio(price_now, tp1, sl0)
+    rr = analysis.calc_rr_ratio(price_now, tp1, sl0)
 
-    bias_comment = short_term_bias(last)
-    gap_pct, gap_comment = calc_gap_info(df)
+    bias_comment = analysis.short_term_bias(last)
+    gap_pct, gap_comment = analysis.calc_gap_info(df)
     price_move_abs = abs(float(last["Close"]) - float(last["Open"])) if atr14 is not None else None
 
-    vp_levels = get_volume_profile(df)
-    heavy_days = get_heavy_days(df)
-    intraday_sc, intraday_comment = get_intraday_5m_score(df_5m)
+    vp_levels = analysis.get_volume_profile(df)
+    heavy_days = analysis.get_heavy_days(df)
+    intraday_sc, intraday_comment = analysis.get_intraday_5m_score(df_5m)
 
     score_mkt, _, _ = compute_market_score(ov)
-    alerts = build_risk_alerts(score_mkt, last, gap_pct, atr14, price_move_abs)
+    alerts = analysis.build_risk_alerts(score_mkt, last, gap_pct, atr14, price_move_abs)
 
     is_fav = symbol in st.session_state["favorite_symbols"]
     fav_new = st.checkbox("⭐ 이 종목 즐겨찾기", value=is_fav)
@@ -1909,7 +1481,7 @@ with col_main:
         st.write(f"- (현재가 기준) 수익률: **{profit_pct:.2f}%**")
 
     if holding_type == "보유 중" and shares > 0 and avg_price > 0:
-        rate = get_usdkrw_rate()
+        rate = market.get_usdkrw_rate()
         cost_factor = 1 - commission_pct / 100
         total_pnl_after_fee = total_pnl * cost_factor
         pnl_krw = total_pnl_after_fee * rate
