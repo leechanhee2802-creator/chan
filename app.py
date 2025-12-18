@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
+import yfinance as yf
 from app_core import analysis
+from app_core import market 
 
 # 선택 기능: AI 해석(요약/헷갈림 설명)
 try:
