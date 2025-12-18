@@ -1,7 +1,8 @@
 import numpy as np
 import pandas as pd
 
-from ui_constants import SCAN_CANDIDATES
+from app_core.ui_constants import SCAN_CANDIDATES
+
 
 def get_mode_config(mode_name: str):
     if mode_name == "단타":
