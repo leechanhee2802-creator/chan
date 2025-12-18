@@ -5,7 +5,7 @@ from app_core import analysis
 from app_core import market
 
 from app_core.ui_style import inject_css
-from ui_constants import POPULAR_SYMBOLS, normalize_symbol
+from app_core.ui_constants import POPULAR_SYMBOLS, normalize_symbol
 from session_state import init_session_state
 from market_verdict import compute_market_score, compute_market_verdict_scores, market_state_badge_from_etfs
 from trade_logic import (
