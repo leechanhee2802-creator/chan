@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from app_core import analysis, market
+import requests
+from app_core import analysis
 
 # 선택 기능: AI 해석(요약/헷갈림 설명)
 try:
@@ -457,6 +458,31 @@ def compute_market_verdict_scores(overview: dict):
         "conclusion": conclusion,
         "holder_line": holder_line,
     }
+
+# =====================================
+# 가격 데이터 + 지표 (레벨 계산은 일봉)
+# =====================================
+def get_price_data(symbol, period="6mo"):
+    if not symbol or symbol.strip() == "":
+        return pd.DataFrame()
+    try:
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period=period, interval="1d", auto_adjust=False)
+    except ValueError:
+        return pd.DataFrame()
+    if df.empty:
+        return df
+    return df[["Open", "High", "Low", "Close", "Volume"]].dropna()
+
+def get_intraday_5m(symbol: str):
+    try:
+        t = yf.Ticker(symbol)
+        df = t.history(period="2d", interval="5m", auto_adjust=False, prepost=False)
+        if df.empty:
+            return pd.DataFrame()
+        return df[["Open", "High", "Low", "Close", "Volume"]].dropna()
+    except Exception:
+        return pd.DataFrame()
 
 # =====================================
 # AI 해석 유틸 (상태 머신 반영)
