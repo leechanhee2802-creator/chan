@@ -65,6 +65,50 @@ def get_last_extended_price(symbol: str):
         return None
 
 
+
+def get_live_price_pair(symbol: str):
+    """정규장 기준 가격과(regular) 시외 포함 가격(extended)을 함께 반환.
+    - 상태 판정/레벨 계산은 기본적으로 regular를 쓰는 것을 권장
+    - extended는 참고(프리/애프터 흔들림이 있을 수 있음)
+    """
+    try:
+        t = yf.Ticker(symbol)
+        info = t.info or {}
+        market_state = info.get("marketState", "") or ""
+        regular = info.get("regularMarketPrice")
+        pre = info.get("preMarketPrice")
+        post = info.get("postMarketPrice")
+
+        regular_price = float(regular) if regular is not None else None
+
+        extended_price = None
+        basis = ""
+        if market_state == "PRE" and pre is not None:
+            extended_price = float(pre)
+            basis = "프리장"
+        elif market_state == "POST" and post is not None:
+            extended_price = float(post)
+            basis = "애프터장"
+        elif regular is not None:
+            extended_price = float(regular)
+            basis = "정규장"
+        else:
+            # 마지막 수단: 1분봉(prepost 포함)
+            last_ext = get_last_extended_price(symbol)
+            extended_price = float(last_ext) if last_ext is not None else None
+            basis = "최근 1분봉"
+
+        return {
+            "regular": regular_price,
+            "extended": extended_price,
+            "market_state": market_state,
+            "basis": basis,
+        }
+    except Exception:
+        return {"regular": None, "extended": None, "market_state": "", "basis": "조회 실패"}
+
+
+
 def safe_last_change_info(ticker_str: str):
     try:
         info = yf.Ticker(ticker_str).info
